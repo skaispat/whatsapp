@@ -19,7 +19,6 @@ async function convertCsvToXlsx(file: File) {
 export async function POST(request: NextRequest) {
   try {
     const supabase = createAdminClient();
-    const user = { id: '84c43f3b-dd3b-4762-8ed2-731cdeea4e8a' };
 
     const formData = await request.formData();
     const file = formData.get('file') as File | null;
@@ -35,21 +34,23 @@ export async function POST(request: NextRequest) {
       );
     }
 
+    // Resolve credentials + real user_id from whatsapp_portal_configs
     const { data: config } = await supabase
       .from('whatsapp_portal_configs')
-      .select('access_token, phone_number_id')
-      .eq('user_id', user.id)
+      .select('user_id, access_token, phone_number_id')
+      .eq('phone_number_id', process.env.WHATSAPP_PHONE_NUMBER_ID!)
       .single();
 
-    if (!config) {
+    const accessToken = config?.access_token || process.env.WHATSAPP_TOKEN;
+    const phoneNumberId = config?.phone_number_id || process.env.WHATSAPP_PHONE_NUMBER_ID;
+    const userId = config?.user_id;
+
+    if (!accessToken || !phoneNumberId || !userId) {
       return NextResponse.json(
         { error: 'WhatsApp credentials are not configured.' },
         { status: 400 }
       );
     }
-
-    const accessToken = config.access_token;
-    const phoneNumberId = config.phone_number_id;
 
     const uploadFile = isCsvFile(file) ? await convertCsvToXlsx(file) : file;
 
@@ -84,7 +85,7 @@ export async function POST(request: NextRequest) {
     const { data: savedMsg, error: msgError } = await supabase
       .from('whatsapp_portal_messages')
       .insert({
-        user_id: user.id,
+        user_id: userId,
         conversation_id: conversationId,
         wa_message_id: waMessageId,
         direction: 'outbound',
@@ -112,7 +113,7 @@ export async function POST(request: NextRequest) {
           last_message_at: new Date().toISOString(),
         })
         .eq('id', conversationId)
-        .eq('user_id', user.id);
+        .eq('user_id', userId);
     }
 
     return NextResponse.json({

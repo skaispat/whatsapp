@@ -5,7 +5,6 @@ import { sendWhatsAppReaction } from '@/lib/whatsapp';
 export async function POST(request: NextRequest) {
   try {
     const supabase = createAdminClient();
-    const user = { id: '84c43f3b-dd3b-4762-8ed2-731cdeea4e8a' };
 
     const { to, messageId, emoji } = await request.json();
 
@@ -16,13 +15,17 @@ export async function POST(request: NextRequest) {
       );
     }
 
+    // Resolve credentials + real user_id from whatsapp_portal_configs
     const { data: config } = await supabase
       .from('whatsapp_portal_configs')
-      .select('access_token, phone_number_id')
-      .eq('user_id', user.id)
+      .select('user_id, access_token, phone_number_id')
+      .eq('phone_number_id', process.env.WHATSAPP_PHONE_NUMBER_ID!)
       .single();
 
-    if (!config) {
+    const accessToken = config?.access_token || process.env.WHATSAPP_TOKEN;
+    const phoneNumberId = config?.phone_number_id || process.env.WHATSAPP_PHONE_NUMBER_ID;
+
+    if (!accessToken || !phoneNumberId) {
       return NextResponse.json(
         { error: 'WhatsApp credentials are not configured.' },
         { status: 400 }
@@ -33,8 +36,8 @@ export async function POST(request: NextRequest) {
       to,
       messageId,
       emoji: emoji || '',
-      accessToken: config.access_token,
-      phoneNumberId: config.phone_number_id,
+      accessToken,
+      phoneNumberId,
     });
 
     return NextResponse.json({ success: true });

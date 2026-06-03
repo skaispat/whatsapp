@@ -11,20 +11,19 @@ export async function GET(request: NextRequest) {
     const supabase = createAdminClient();
 
     const { searchParams } = new URL(request.url);
-    const userId = searchParams.get('userId');
 
-    const activeUserId = userId || '84c43f3b-dd3b-4762-8ed2-731cdeea4e8a';
-
-    // 1. Fetch Config
+    // Resolve credentials + real user_id from whatsapp_portal_configs
     const { data: config } = await supabase
       .from('whatsapp_portal_configs')
-      .select('waba_id, access_token')
-      .eq('user_id', activeUserId)
+      .select('user_id, waba_id, access_token')
+      .eq('phone_number_id', process.env.WHATSAPP_PHONE_NUMBER_ID!)
       .single();
 
-    if (!config?.waba_id || !config?.access_token) {
+    if (!config?.waba_id || !config?.access_token || !config?.user_id) {
       return NextResponse.json({ error: 'WhatsApp config not found' }, { status: 400 });
     }
+
+    const activeUserId = config.user_id;
 
     // 2. Fetch Templates from Meta
     const metaTemplates = await fetchWhatsAppTemplates({

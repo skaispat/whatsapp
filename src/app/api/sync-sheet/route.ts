@@ -49,8 +49,22 @@ export async function POST(req: Request) {
       );
     }
 
+    // Resolve real user_id from whatsapp_portal_configs
+    const { data: portalConfig } = await supabase
+      .from('whatsapp_portal_configs')
+      .select('user_id')
+      .eq('phone_number_id', process.env.WHATSAPP_PHONE_NUMBER_ID!)
+      .single();
+
+    if (!portalConfig?.user_id) {
+      return NextResponse.json(
+        { success: false, error: 'WhatsApp config not found' },
+        { status: 400 }
+      );
+    }
+
     // Default mock user ID used in all other API routes
-    const userId = '84c43f3b-dd3b-4762-8ed2-731cdeea4e8a';
+    const userId = portalConfig.user_id;
 
     // Determine direction and contact info based on event type
     let direction: 'inbound' | 'outbound' = 'inbound';

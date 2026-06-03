@@ -7,9 +7,7 @@ export async function POST(request: NextRequest) {
     const supabase = createAdminClient();
 
     const body = await request.json();
-    const { to, templateName, languageCode, components, exactText, conversationId, userId } = body;
-
-    const activeUserId = userId || '84c43f3b-dd3b-4762-8ed2-731cdeea4e8a';
+    const { to, templateName, languageCode, components, exactText, conversationId } = body;
 
     if (!to || !templateName) {
       return NextResponse.json(
@@ -18,22 +16,24 @@ export async function POST(request: NextRequest) {
       );
     }
 
+    // Resolve credentials + real user_id from whatsapp_portal_configs
     const { data: config } = await supabase
       .from('whatsapp_portal_configs')
-      .select('access_token, phone_number_id, waba_id')
-      .eq('user_id', activeUserId)
+      .select('user_id, access_token, phone_number_id, waba_id')
+      .eq('phone_number_id', process.env.WHATSAPP_PHONE_NUMBER_ID!)
       .single();
 
-    if (!config) {
+    const accessToken = config?.access_token || process.env.WHATSAPP_TOKEN;
+    const phoneNumberId = config?.phone_number_id || process.env.WHATSAPP_PHONE_NUMBER_ID;
+    const wabaId = config?.waba_id || process.env.WHATSAPP_WABA_ID;
+    const userId = config?.user_id;
+
+    if (!accessToken || !phoneNumberId || !userId) {
       return NextResponse.json(
         { error: 'WhatsApp credentials are not configured.' },
         { status: 400 }
       );
     }
-
-    const accessToken = config.access_token;
-    const phoneNumberId = config.phone_number_id;
-    const wabaId = config.waba_id;
 
     // Send via Meta API
     const { messageId: waMessageId } = await sendWhatsAppTemplate({
@@ -69,36 +69,36 @@ export async function POST(request: NextRequest) {
 
     // If conversationId is not provided (e.g. sending template to a new user), create/get it
     if (!currentConversationId) {
-       // 1. Upsert contact
-        const { data: contact, error: contactError } = await (supabase as any)
-          .from('whatsapp_portal_contacts')
-         .upsert(
-           { user_id: activeUserId, phone_number: to },
-           { onConflict: 'user_id,phone_number' }
-         )
-         .select('id')
-         .single();
-         
-       if (contact) {
-         // 2. Upsert conversation
-          const { data: conversation, error: convError } = await (supabase as any)
-            .from('whatsapp_portal_conversations')
-           .upsert(
-             {
-               user_id: activeUserId,
-               contact_id: contact.id,
-               last_message: finalContent,
-               last_message_at: new Date().toISOString(),
-             },
-             { onConflict: 'user_id,contact_id' }
-           )
-           .select('id')
-           .single();
-           
-         if (conversation) {
-           currentConversationId = conversation.id;
-         }
-       }
+      // 1. Upsert contact
+      const { data: contact } = await (supabase as any)
+        .from('whatsapp_portal_contacts')
+        .upsert(
+          { user_id: userId, phone_number: to },
+          { onConflict: 'user_id,phone_number' }
+        )
+        .select('id')
+        .single();
+
+      if (contact) {
+        // 2. Upsert conversation
+        const { data: conversation } = await (supabase as any)
+          .from('whatsapp_portal_conversations')
+          .upsert(
+            {
+              user_id: userId,
+              contact_id: contact.id,
+              last_message: finalContent,
+              last_message_at: new Date().toISOString(),
+            },
+            { onConflict: 'user_id,contact_id' }
+          )
+          .select('id')
+          .single();
+
+        if (conversation) {
+          currentConversationId = conversation.id;
+        }
+      }
     }
 
     // Save outbound message to Supabase
@@ -106,7 +106,7 @@ export async function POST(request: NextRequest) {
     const { data: savedMsg, error: msgError } = await supabase
       .from('whatsapp_portal_messages')
       .upsert({
-        user_id: activeUserId,
+        user_id: userId,
         conversation_id: currentConversationId,
         wa_message_id: waMessageId,
         direction: 'outbound',
@@ -135,7 +135,7 @@ export async function POST(request: NextRequest) {
           last_message_at: new Date().toISOString(),
         })
         .eq('id', conversationId)
-        .eq('user_id', activeUserId);
+        .eq('user_id', userId);
     }
 
     return NextResponse.json({

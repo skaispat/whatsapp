@@ -4,13 +4,25 @@ import { createAdminClient } from '@/lib/supabase/server';
 export async function GET() {
   try {
     const supabase = createAdminClient();
-    const user = { id: '84c43f3b-dd3b-4762-8ed2-731cdeea4e8a' };
+
+    // Resolve real user_id from whatsapp_portal_configs
+    const { data: config } = await supabase
+      .from('whatsapp_portal_configs')
+      .select('user_id')
+      .eq('phone_number_id', process.env.WHATSAPP_PHONE_NUMBER_ID!)
+      .single();
+
+    if (!config?.user_id) {
+      return NextResponse.json({ error: 'WhatsApp config not found' }, { status: 400 });
+    }
+
+    const userId = config.user_id;
 
     // Messages Stats
     const { data: messages, error: messagesErr } = await supabase
       .from('whatsapp_portal_messages')
       .select('status, direction, interactive_type, interest_status')
-      .eq('user_id', user.id);
+      .eq('user_id', userId);
 
     if (messagesErr) throw messagesErr;
 
@@ -18,7 +30,7 @@ export async function GET() {
     const { data: profile } = await supabase
       .from('profiles')
       .select('credits')
-      .eq('id', user.id)
+      .eq('id', userId)
       .single();
 
     // Fetch 10 most recent interactions
@@ -43,7 +55,7 @@ export async function GET() {
           )
         )
       `)
-      .eq('user_id', user.id)
+      .eq('user_id', userId)
       .or('interactive_type.not.is.null,direction.eq.inbound')
       .order('created_at', { ascending: false })
       .limit(10);

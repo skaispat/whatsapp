@@ -33,10 +33,21 @@ export async function POST(request: NextRequest) {
 
     if (fetchError) console.error('Error fetching template list:', fetchError);
 
+    console.log("🔍 MATCHING TEMPLATES DEBUG:", {
+      targetNormalized,
+      fetchedTemplatesCount: allTemplates?.length || 0,
+      fetchedTemplateNames: allTemplates?.map((t: any) => ({
+        original: t.template_name,
+        normalized: t.template_name.toLowerCase().replace(/_/g, '').trim()
+      }))
+    });
+
     // Find template by matching normalized versions string-to-string
     const matchedTemplate = (allTemplates || []).find((t: { template_name: string; body?: string | null; header?: string | null; footer?: string | null }) => 
       t.template_name.toLowerCase().replace(/_/g, '').trim() === targetNormalized
     );
+
+    console.log("🔍 MATCHED TEMPLATE RESULT:", matchedTemplate);
 
     let finalContent = `[Template: ${template_name}]`;
     let cleanTrackingVars = parameters || [];

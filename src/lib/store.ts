@@ -17,34 +17,38 @@ async function resolveTemplatesForMessages(rawMessages: any[]): Promise<any[]> {
 
   if (templateMessages.length === 0) return rawMessages;
 
-  // Extract unique template names
-  const templateNames = Array.from(new Set(templateMessages.map((m: any) => m.template_name)));
+  // Extract user_id from messages if available to limit query scope
+  const userId = rawMessages.find((m: any) => m.user_id)?.user_id;
 
   try {
     // Query template details (body, header, footer) from supabase
-    let { data: templates, error } = await supabase
-      .from('whatsapp_portal_templates')
-      .select('template_name, body, header, footer')
-      .in('template_name', templateNames);
+    let query = supabase.from('whatsapp_portal_templates').select('template_name, body, header, footer');
+    if (userId) {
+      query = query.eq('user_id', userId);
+    }
+    
+    let { data: templates, error } = await query;
 
     // Fallback if the footer column doesn't exist in this database schema version
     if (error && (error.code === '42703' || error.message?.toLowerCase().includes('footer'))) {
       console.warn('⚠️ whatsapp_templates does not have a "footer" column. Retrying without it.');
-      const retryResult = await supabase
-        .from('whatsapp_portal_templates')
-        .select('template_name, body, header')
-        .in('template_name', templateNames);
+      let retryQuery = supabase.from('whatsapp_portal_templates').select('template_name, body, header');
+      if (userId) {
+        retryQuery = retryQuery.eq('user_id', userId);
+      }
+      const retryResult = await retryQuery;
       templates = retryResult.data;
     } else if (error) {
       console.error('Error fetching template bodies:', error);
       return rawMessages;
     }
 
-    // Map template_name -> template object
+    // Map normalized template_name -> template object
     const templateMap: Record<string, { body: string; header?: string; footer?: string }> = {};
     if (templates) {
       templates.forEach((t: any) => {
-        templateMap[t.template_name] = {
+        const normalizedKey = t.template_name.toLowerCase().replace(/_/g, '').trim();
+        templateMap[normalizedKey] = {
           body: t.body || '',
           header: t.header || '',
           footer: t.footer || '',
@@ -55,7 +59,8 @@ async function resolveTemplatesForMessages(rawMessages: any[]): Promise<any[]> {
     // Reconstruct content for template messages
     return rawMessages.map((msg: any) => {
       if ((msg.message_type === 'template' || msg.template_name) && msg.template_name) {
-        const template = templateMap[msg.template_name];
+        const normalizedKey = msg.template_name.toLowerCase().replace(/_/g, '').trim();
+        const template = templateMap[normalizedKey];
         const parameters = msg.metadata?.parameters || [];
 
         if (template) {

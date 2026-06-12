@@ -5,149 +5,97 @@ export async function POST(request: NextRequest) {
   try {
     const body = await request.json();
     console.log("🚨 RAW INCOMING PAYLOAD FROM SHEET:", JSON.stringify(body, null, 2));
+    
     let { user_id, wamid, phone, template_name, parameters } = body;
 
     // Normalize phone number to prevent duplicate contacts
     if (phone) {
-      phone = phone.toString().replace(/\D/g, ''); // Remove any non-numeric characters
-      if (phone.length === 10) {
-        phone = `91${phone}`;
-      }
+      phone = phone.toString().replace(/\D/g, '');
+      if (phone.length === 10) phone = `91${phone}`;
     }
 
-    // Validate required fields
     if (!user_id || !wamid || !phone || !template_name) {
       return NextResponse.json(
-        { success: false, error: 'Missing required fields: user_id, wamid, phone, or template_name' },
+        { success: false, error: 'Missing required fields' },
         { status: 400 }
       );
     }
 
     const supabase = createAdminClient();
 
-    // Fetch template details to construct message body
-    let finalContent = `[Template: ${template_name}]`;
-    let { data: templateData, error: templateError } = await supabase
+    // 1. FUZZY MATCH TEMPLATE NAME: Handle missing underscores or casing variants
+    const targetNormalized = template_name.toLowerCase().replace(/_/g, '').trim();
+    
+    const { data: allTemplates, error: fetchError } = await supabase
       .from('whatsapp_portal_templates')
       .select('template_name, body, header, footer')
-      .eq('template_name', template_name)
-      .eq('user_id', user_id)
-      .maybeSingle();
+      .eq('user_id', user_id);
 
-    let resolvedTemplateData = templateData;
-    if (templateError && (templateError.code === '42703' || templateError.message?.toLowerCase().includes('footer'))) {
-      const { data: retryData, error: retryError } = await supabase
-        .from('whatsapp_portal_templates')
-        .select('template_name, body, header')
-        .eq('template_name', template_name)
-        .eq('user_id', user_id)
-        .maybeSingle();
-      
-      resolvedTemplateData = retryData;
-      if (retryError) {
-        console.error('Error fetching template (retry):', retryError);
+    if (fetchError) console.error('Error fetching template list:', fetchError);
+
+    // Find template by matching normalized versions string-to-string
+    const matchedTemplate = (allTemplates || []).find((t: { template_name: string; body?: string | null; header?: string | null; footer?: string | null }) => 
+      t.template_name.toLowerCase().replace(/_/g, '').trim() === targetNormalized
+    );
+
+    let finalContent = `[Template: ${template_name}]`;
+    let cleanTrackingVars = parameters || [];
+
+    if (matchedTemplate) {
+      // Correct our template_name reference to match database underscores perfectly
+      template_name = matchedTemplate.template_name;
+
+      // Calculate true placeholder slots in body/header text to filter out trailing PDF links
+      const bodyMatches = matchedTemplate.body ? matchedTemplate.body.match(/{{\d+}}/g) || [] : [];
+      const headerMatches = matchedTemplate.header ? matchedTemplate.header.match(/{{\d+}}/g) || [] : [];
+      const totalVarCount = [...headerMatches, ...bodyMatches].length;
+
+      // Slice the array to include ONLY the actual variables, removing PDF attachments
+      if (totalVarCount > 0 && cleanTrackingVars.length > totalVarCount) {
+        cleanTrackingVars = cleanTrackingVars.slice(0, totalVarCount);
       }
-    } else if (templateError) {
-      console.error('Error fetching template:', templateError);
-    }
 
-    // --- FALLBACK: Fuzzy Matching ---
-    if (!resolvedTemplateData) {
-      const { data: allTemplates, error: allTemplatesError } = await supabase
-        .from('whatsapp_portal_templates')
-        .select('template_name, body, header')
-        .eq('user_id', user_id);
-
-      if (!allTemplatesError && allTemplates && allTemplates.length > 0) {
-        const normalize = (name: string) => name.toLowerCase().replace(/_/g, '').trim();
-        const normalizedTarget = normalize(template_name);
-
-        const matchedTemplate = allTemplates.find((t: any) => normalize(t.template_name) === normalizedTarget);
-
-        if (matchedTemplate) {
-          resolvedTemplateData = matchedTemplate;
-          // Re-assign the precise DB template name (e.g. nabl_renewal_reminder) to ensure data integrity during upsert
-          template_name = matchedTemplate.template_name;
-        }
-      }
-    }
-    // --------------------------------
-
-    if (resolvedTemplateData) {
+      // Reconstruct final compiled text content string for storage fallback updates
       let paramIndex = 0;
-      const paramsArray = parameters || [];
       const replacePlaceholders = (text: string | undefined) => {
         if (!text) return '';
         return text.replace(/\{\{(\d+)\}\}/g, () => {
-          const val = paramsArray[paramIndex++];
+          const val = cleanTrackingVars[paramIndex++];
           return val !== undefined && val !== null ? String(val) : '';
         });
       };
 
-      const resolvedHeader = replacePlaceholders(resolvedTemplateData.header);
-      const resolvedBody = replacePlaceholders(resolvedTemplateData.body);
-      const resolvedFooter = replacePlaceholders(resolvedTemplateData.footer);
+      const resolvedHeader = replacePlaceholders(matchedTemplate.header);
+      const resolvedBody = replacePlaceholders(matchedTemplate.body);
+      const resolvedFooter = replacePlaceholders(matchedTemplate.footer);
 
       let fullContent = '';
       if (resolvedHeader) fullContent += `*${resolvedHeader.trim()}*\n\n`;
       fullContent += resolvedBody;
       if (resolvedFooter) fullContent += `\n\n_${resolvedFooter.trim()}_`;
       
-      if (fullContent.trim()) {
-        finalContent = fullContent.trim();
-      }
+      if (fullContent.trim()) finalContent = fullContent.trim();
     }
 
-    // 1. Resolve Contact (Find or Create)
+    // 2. Resolve Contact
     const { data: contact, error: contactError } = await supabase
       .from('whatsapp_portal_contacts')
-      .upsert(
-        { 
-          user_id, 
-          phone_number: phone, 
-          name: phone, 
-          profile_name: phone 
-        },
-        { onConflict: 'user_id,phone_number' }
-      )
-      .select('id')
-      .single();
+      .upsert({ user_id, phone_number: phone, name: phone, profile_name: phone }, { onConflict: 'user_id,phone_number' })
+      .select('id').single();
 
-    if (contactError || !contact) {
-      console.error('Error resolving contact:', contactError);
-      return NextResponse.json(
-        { success: false, error: contactError?.message || 'Failed to resolve contact' },
-        { status: 500 }
-      );
-    }
+    if (contactError || !contact) return NextResponse.json({ success: false, error: 'Contact error' }, { status: 500 });
 
-    // 2. Resolve Conversation (Find or Create)
+    // 3. Resolve Conversation
     const { data: conversation, error: convError } = await supabase
       .from('whatsapp_portal_conversations')
-      .upsert(
-        {
-          user_id,
-          contact_id: contact.id,
-          last_message: finalContent,
-          last_message_at: new Date().toISOString(),
-        },
-        { onConflict: 'user_id,contact_id' }
-      )
-      .select('id')
-      .single();
+      .upsert({ user_id, contact_id: contact.id, last_message: finalContent, last_message_at: new Date().toISOString() }, { onConflict: 'user_id,contact_id' })
+      .select('id').single();
 
-    if (convError || !conversation) {
-      console.error('Error resolving conversation:', convError);
-      return NextResponse.json(
-        { success: false, error: convError?.message || 'Failed to resolve conversation' },
-        { status: 500 }
-      );
-    }
+    if (convError || !conversation) return NextResponse.json({ success: false, error: 'Conversation error' }, { status: 500 });
 
-    // 3. Upsert Message
-    // In PostgREST/Supabase, columns not passed in the payload will keep their existing values on conflict.
-    // If the webhook status update arrived first, its status (e.g. 'delivered' or 'read') will not be modified.
-    const metadata = { parameters: parameters || [] };
+    // 4. Upsert Message with PERFECT metadata column nesting alignment!
+    const metadata = { parameters: cleanTrackingVars }; // 👈 Fixes the store.ts dynamic lookup pass!
+
     const { data: message, error: msgError } = await supabase
       .from('whatsapp_portal_messages')
       .upsert(
@@ -157,45 +105,19 @@ export async function POST(request: NextRequest) {
           wa_message_id: wamid,
           direction: 'outbound',
           message_type: 'template',
-          template_name,
-          metadata,
+          template_name, // Saved with correct underscores
+          metadata,      // Saved inside nested schema block
           source: 'sheet',
           content: finalContent,
         },
         { onConflict: 'wa_message_id' }
       )
-      .select('*')
-      .single();
+      .select('*').single();
 
-    if (msgError) {
-      console.error('Error upserting message:', msgError);
-      return NextResponse.json(
-        { success: false, error: msgError.message },
-        { status: 500 }
-      );
-    }
+    if (msgError) return NextResponse.json({ success: false, error: msgError.message }, { status: 500 });
 
-    return NextResponse.json({
-      success: true,
-      message,
-    });
+    return NextResponse.json({ success: true, message });
   } catch (error: any) {
-    console.error('Register template error:', error);
-    return NextResponse.json(
-      { success: false, error: error.message || 'Internal Server Error' },
-      { status: 500 }
-    );
+    return NextResponse.json({ success: false, error: error.message }, { status: 500 });
   }
-}
-
-// Support preflight OPTIONS requests for CORS (if needed)
-export async function OPTIONS() {
-  return new NextResponse(null, {
-    status: 204,
-    headers: {
-      'Access-Control-Allow-Origin': '*',
-      'Access-Control-Allow-Methods': 'POST, OPTIONS',
-      'Access-Control-Allow-Headers': 'Content-Type, Authorization',
-    },
-  });
 }

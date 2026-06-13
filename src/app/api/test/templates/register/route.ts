@@ -6,7 +6,8 @@ export async function POST(request: NextRequest) {
     const body = await request.json();
     console.log("🚨 RAW INCOMING PAYLOAD FROM SHEET:", JSON.stringify(body, null, 2));
     
-    let { user_id, wamid, phone, template_name, parameters } = body;
+    let { user_id, wamid, phone, template_name, parameters, media_url } = body;
+    const resolvedMediaUrl = media_url || "";
 
     // Normalize phone number to prevent duplicate contacts
     if (phone) {
@@ -105,7 +106,10 @@ export async function POST(request: NextRequest) {
     if (convError || !conversation) return NextResponse.json({ success: false, error: 'Conversation error' }, { status: 500 });
 
     // 4. Upsert Message with PERFECT metadata column nesting alignment!
-    const metadata = { parameters: cleanTrackingVars }; // 👈 Fixes the store.ts dynamic lookup pass!
+    const metadata = {
+      parameters: cleanTrackingVars,
+      media_url: resolvedMediaUrl
+    }; // 👈 Fixes the store.ts dynamic lookup pass!
 
     const { data: message, error: msgError } = await supabase
       .from('whatsapp_portal_messages')

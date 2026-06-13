@@ -812,6 +812,41 @@ export default function InboxPage() {
                               );
                           }
                         })()}
+
+                        {/* Media URL Attachment Preview from Metadata */}
+                        {(() => {
+                          const mediaUrl = m.metadata?.media_url;
+                          if (!mediaUrl) return null;
+
+                          const lowerUrl = mediaUrl.toLowerCase();
+                          const isImage = /\.(png|jpe?g|gif|webp|bmp)/i.test(lowerUrl) || lowerUrl.includes('image');
+                          const isPdf = /\.pdf/i.test(lowerUrl) || lowerUrl.includes('pdf');
+
+                          return (
+                            <div className="mt-2 bg-gray-50 text-gray-800 border border-gray-200 rounded p-2 max-w-[280px]">
+                              {isImage ? (
+                                <img
+                                  src={mediaUrl}
+                                  alt="Attached Image"
+                                  className="w-full h-auto max-h-[180px] object-cover rounded"
+                                />
+                              ) : (
+                                <a
+                                  href={mediaUrl}
+                                  target="_blank"
+                                  rel="noreferrer"
+                                  className="flex items-center gap-2 text-[12px] text-blue-600 dark:text-blue-400 hover:underline font-medium"
+                                >
+                                  <span className="text-base">📄</span>
+                                  <span className="truncate">
+                                    {isPdf ? 'View Attached PDF' : 'Download Document'}
+                                  </span>
+                                </a>
+                              )}
+                            </div>
+                          );
+                        })()}
+
                         <div className={`flex items-center gap-1 mt-1.5 ${isOut ? 'justify-end' : 'justify-start'}`}>
                           <span className={`text-[10px] ${isOut ? 'text-[var(--color-wa-teal)]' : 'text-[var(--color-wa-muted)]'}`}>
                             {new Date(m.created_at).toLocaleTimeString('en-IN', { hour: '2-digit', minute: '2-digit' })}

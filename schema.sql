@@ -238,26 +238,21 @@ CREATE INDEX IF NOT EXISTS idx_whatsapp_portal_template_stats_lookup
 ON public.whatsapp_portal_template_stats (template_id, user_id);
 
 
-CREATE TABLE public.whatsapp_portal_templates (
-  id uuid NOT NULL DEFAULT extensions.uuid_generate_v4(),
-  user_id uuid NULL,
-  template_name text NOT NULL,
-  category text NULL,
-  language text NULL,
-  status text NULL,
-  created_at timestamp WITH TIME ZONE NULL DEFAULT now(),
-  body text NULL,
-  header text NULL,
-
-  CONSTRAINT whatsapp_portal_templates_pkey
-    PRIMARY KEY (id),
-
-  CONSTRAINT whatsapp_portal_templates_user_template_unique
-    UNIQUE (user_id, template_name),
-
-  CONSTRAINT whatsapp_portal_templates_user_id_fkey
-    FOREIGN KEY (user_id)
-    REFERENCES auth.users (id)
+create table public.whatsapp_portal_templates (
+  id uuid not null default extensions.uuid_generate_v4 (),
+  user_id uuid null,
+  template_name text not null,
+  category text null,
+  language text null,
+  status text null,
+  created_at timestamp with time zone null default now(),
+  body text null,
+  header text null,
+  footer text null,
+  buttons jsonb null default '[]'::jsonb,
+  constraint whatsapp_portal_templates_pkey primary key (id),
+  constraint whatsapp_portal_templates_user_template_unique unique (user_id, template_name),
+  constraint whatsapp_portal_templates_user_id_fkey foreign KEY (user_id) references auth.users (id)
 ) TABLESPACE pg_default;
 
 

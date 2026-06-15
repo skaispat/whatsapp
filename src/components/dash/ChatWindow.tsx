@@ -4,7 +4,27 @@ import React, { useRef, useEffect, useState } from 'react';
 import { useDashStore } from '@/lib/store';
 import type { DashMessage } from '@/lib/store';
 import { formatTime, formatFullDateTime, getInitials, generateAvatarColor } from '@/lib/utils';
-import { Send, ArrowDown, Info, Clock, Check, CheckCheck, AlertCircle, Loader2, FileText, ArrowLeft } from 'lucide-react';
+import { 
+  Send, 
+  ArrowDown, 
+  Info, 
+  Clock, 
+  Check, 
+  CheckCheck, 
+  AlertCircle, 
+  Loader2, 
+  FileText, 
+  ArrowLeft,
+  ChevronDown,
+  Trash2,
+  X,
+  Reply,
+  Copy,
+  Forward,
+  Pin,
+  Star,
+  ShieldAlert
+} from 'lucide-react';
 import TemplateSender from './TemplateSender';
 
 export default function DashChatWindow() {
@@ -15,6 +35,8 @@ export default function DashChatWindow() {
     loadingMessages,
     sendMessage,
     setActiveConversation,
+    deleteMessage,
+    deleteMessages,
   } = useDashStore();
 
   const [inputText, setInputText] = useState('');
@@ -22,6 +44,13 @@ export default function DashChatWindow() {
   const [showScrollBtn, setShowScrollBtn] = useState(false);
   const [statusTooltip, setStatusTooltip] = useState<string | null>(null);
   const [showTemplatePicker, setShowTemplatePicker] = useState(false);
+
+  // Selection / Deletion states
+  const [selectedMessageIds, setSelectedMessageIds] = useState<string[]>([]);
+  const [isSelectionMode, setIsSelectionMode] = useState(false);
+  const [menuAnchor, setMenuAnchor] = useState<{ x: number; y: number } | null>(null);
+  const [menuMessage, setMenuMessage] = useState<DashMessage | null>(null);
+  const [showDeleteModal, setShowDeleteModal] = useState(false);
 
   const scrollRef = useRef<HTMLDivElement>(null);
   const bottomRef = useRef<HTMLDivElement>(null);
@@ -43,6 +72,11 @@ export default function DashChatWindow() {
 
   // Scroll to bottom on conversation switch
   useEffect(() => {
+    setSelectedMessageIds([]);
+    setIsSelectionMode(false);
+    setMenuAnchor(null);
+    setMenuMessage(null);
+    setShowDeleteModal(false);
     setTimeout(() => {
       bottomRef.current?.scrollIntoView({ behavior: 'auto' });
     }, 100);
@@ -75,6 +109,48 @@ export default function DashChatWindow() {
     if (e.key === 'Enter' && !e.shiftKey) {
       e.preventDefault();
       handleSend();
+    }
+  };
+
+  const isEligibleForEveryoneDelete = () => {
+    const msgsToCheck = isSelectionMode
+      ? messages.filter((m) => selectedMessageIds.includes(m.id))
+      : menuMessage
+      ? [menuMessage]
+      : [];
+
+    if (msgsToCheck.length === 0) return false;
+
+    return msgsToCheck.every((msg) => {
+      if (msg.direction !== 'outbound') return false;
+      const msgTime = new Date(msg.created_at).getTime();
+      const hoursElapsed = (Date.now() - msgTime) / (1000 * 60 * 60);
+      return hoursElapsed <= 24;
+    });
+  };
+
+  const handleExecuteDelete = async (type: 'me' | 'everyone') => {
+    setShowDeleteModal(false);
+    const idsToDelete = isSelectionMode
+      ? selectedMessageIds
+      : menuMessage
+      ? [menuMessage.id]
+      : [];
+
+    if (idsToDelete.length === 0) return;
+
+    try {
+      if (idsToDelete.length === 1) {
+        await deleteMessage(idsToDelete[0], type);
+      } else {
+        await deleteMessages(idsToDelete, type);
+      }
+    } catch (err) {
+      console.error('Delete failed:', err);
+    } finally {
+      setIsSelectionMode(false);
+      setSelectedMessageIds([]);
+      setMenuMessage(null);
     }
   };
 
@@ -112,7 +188,7 @@ export default function DashChatWindow() {
   };
 
   return (
-    <div className="flex-1 flex flex-col h-full overflow-hidden">
+    <div className="flex-1 flex flex-col h-full overflow-hidden relative">
       {/* Header */}
       <div className="h-[60px] bg-[#202c33] px-2 md:px-4 flex items-center gap-2 md:gap-3 shrink-0 border-b border-[#2a3942]/30">
         <button
@@ -178,6 +254,19 @@ export default function DashChatWindow() {
                       setStatusTooltip(statusTooltip === id ? null : id)
                     }
                     showStatus={statusTooltip === msg.id}
+                    isSelectionMode={isSelectionMode}
+                    isSelected={selectedMessageIds.includes(msg.id)}
+                    onToggleSelect={() => {
+                      if (selectedMessageIds.includes(msg.id)) {
+                        setSelectedMessageIds(selectedMessageIds.filter((id) => id !== msg.id));
+                      } else {
+                        setSelectedMessageIds([...selectedMessageIds, msg.id]);
+                      }
+                    }}
+                    onOpenDropdown={(e, msg) => {
+                      setMenuAnchor({ x: e.clientX, y: e.clientY });
+                      setMenuMessage(msg);
+                    }}
                   />
                 ))}
               </div>
@@ -205,44 +294,180 @@ export default function DashChatWindow() {
         />
       )}
 
-      {/* Input */}
-      <div className="bg-[#202c33] px-4 py-3 flex items-end gap-3 shrink-0 border-t border-[#2a3942]/30 relative">
-        <button
-          onClick={() => setShowTemplatePicker(!showTemplatePicker)}
-          title="Send Template"
-          className={`w-10 h-10 rounded-full flex items-center justify-center shrink-0 transition-all active:scale-95 ${
-            showTemplatePicker
-              ? 'bg-[#00a884] text-[#111b21]'
-              : 'bg-[#2a3942] text-[#8696a0] hover:text-[#e9edef] hover:bg-[#3b4a54]'
-          }`}
-        >
-          <FileText size={18} />
-        </button>
+      {/* Bottom control bar: Selection vs Message Input */}
+      {isSelectionMode ? (
+        <div className="bg-[#202c33] h-[60px] px-6 flex items-center justify-between shrink-0 border-t border-[#2a3942]/30 relative z-20 animate-slideUp">
+          <div className="flex items-center gap-4 text-[#e9edef]">
+            <button
+              onClick={() => {
+                setIsSelectionMode(false);
+                setSelectedMessageIds([]);
+              }}
+              className="p-1.5 hover:bg-[#2a3942] rounded-full transition-colors text-[#8696a0] hover:text-[#e9edef]"
+            >
+              <X size={20} />
+            </button>
+            <span className="text-[14px] font-medium">
+              {selectedMessageIds.length} selected
+            </span>
+          </div>
 
-        <div className="flex-1 bg-[#2a3942] rounded-lg px-4 py-2.5 flex items-end">
-          <textarea
-            value={inputText}
-            onChange={(e) => setInputText(e.target.value)}
-            onKeyDown={handleKeyDown}
-            placeholder="Type a message"
-            rows={1}
-            className="flex-1 bg-transparent border-none outline-none text-[14px] text-[#e9edef] placeholder:text-[#8696a0]/50 resize-none max-h-[120px]"
-            style={{ minHeight: '24px' }}
-          />
+          <button
+            onClick={() => setShowDeleteModal(true)}
+            disabled={selectedMessageIds.length === 0}
+            className="w-10 h-10 rounded-full bg-[#ff5c5c]/10 text-[#ff5c5c] flex items-center justify-center shrink-0 hover:bg-[#ff5c5c]/20 transition-all disabled:opacity-40 disabled:cursor-not-allowed active:scale-95"
+            title="Delete Selected"
+          >
+            <Trash2 size={18} />
+          </button>
         </div>
+      ) : (
+        <div className="bg-[#202c33] px-4 py-3 flex items-end gap-3 shrink-0 border-t border-[#2a3942]/30 relative z-20">
+          <button
+            onClick={() => setShowTemplatePicker(!showTemplatePicker)}
+            title="Send Template"
+            className={`w-10 h-10 rounded-full flex items-center justify-center shrink-0 transition-all active:scale-95 ${
+              showTemplatePicker
+                ? 'bg-[#00a884] text-[#111b21]'
+                : 'bg-[#2a3942] text-[#8696a0] hover:text-[#e9edef] hover:bg-[#3b4a54]'
+            }`}
+          >
+            <FileText size={18} />
+          </button>
 
-        <button
-          onClick={handleSend}
-          disabled={sending || !inputText.trim()}
-          className="w-10 h-10 rounded-full bg-[#00a884] flex items-center justify-center text-[#111b21] shrink-0 hover:bg-[#00a884]/90 transition-all disabled:opacity-40 disabled:cursor-not-allowed active:scale-95"
+          <div className="flex-1 bg-[#2a3942] rounded-lg px-4 py-2.5 flex items-end">
+            <textarea
+              value={inputText}
+              onChange={(e) => setInputText(e.target.value)}
+              onKeyDown={handleKeyDown}
+              placeholder="Type a message"
+              rows={1}
+              className="flex-1 bg-transparent border-none outline-none text-[14px] text-[#e9edef] placeholder:text-[#8696a0]/50 resize-none max-h-[120px]"
+              style={{ minHeight: '24px' }}
+            />
+          </div>
+
+          <button
+            onClick={handleSend}
+            disabled={sending || !inputText.trim()}
+            className="w-10 h-10 rounded-full bg-[#00a884] flex items-center justify-center text-[#111b21] shrink-0 hover:bg-[#00a884]/90 transition-all disabled:opacity-40 disabled:cursor-not-allowed active:scale-95"
+          >
+            {sending ? (
+              <Loader2 size={18} className="animate-spin" />
+            ) : (
+              <Send size={18} />
+            )}
+          </button>
+        </div>
+      )}
+
+      {/* Context/Dropdown Menu Backing Overlay */}
+      {menuAnchor && (
+        <div 
+          className="fixed inset-0 z-[99]" 
+          onClick={() => { setMenuAnchor(null); setMenuMessage(null); }} 
+          onContextMenu={(e) => { e.preventDefault(); setMenuAnchor(null); setMenuMessage(null); }}
+        />
+      )}
+
+      {/* Custom Dropdown Menu matching the image */}
+      {menuAnchor && menuMessage && (
+        <div 
+          className="fixed z-[100] bg-[#233138] border border-[#2f3b43] rounded-lg shadow-xl py-1.5 w-[170px] text-[#e9edef] overflow-hidden"
+          style={{ top: Math.min(menuAnchor.y, window.innerHeight - 320), left: Math.min(menuAnchor.x, window.innerWidth - 190) }}
         >
-          {sending ? (
-            <Loader2 size={18} className="animate-spin" />
-          ) : (
-            <Send size={18} />
-          )}
-        </button>
-      </div>
+          <button onClick={() => { setMenuAnchor(null); }} className="w-full text-left px-4 py-2 text-[13.5px] hover:bg-[#182229] transition-colors flex items-center gap-3">
+            <Reply size={15} className="text-[#8696a0]" /> Reply
+          </button>
+          <button 
+            onClick={() => { 
+              navigator.clipboard.writeText(menuMessage.content);
+              setMenuAnchor(null);
+              setMenuMessage(null);
+            }} 
+            className="w-full text-left px-4 py-2 text-[13.5px] hover:bg-[#182229] transition-colors flex items-center gap-3"
+          >
+            <Copy size={15} className="text-[#8696a0]" /> Copy
+          </button>
+          <button onClick={() => { setMenuAnchor(null); }} className="w-full text-left px-4 py-2 text-[13.5px] hover:bg-[#182229] transition-colors flex items-center gap-3">
+            <Forward size={15} className="text-[#8696a0]" /> Forward
+          </button>
+          <button onClick={() => { setMenuAnchor(null); }} className="w-full text-left px-4 py-2 text-[13.5px] hover:bg-[#182229] transition-colors flex items-center gap-3">
+            <Pin size={15} className="text-[#8696a0]" /> Pin
+          </button>
+          <button onClick={() => { setMenuAnchor(null); }} className="w-full text-left px-4 py-2 text-[13.5px] hover:bg-[#182229] transition-colors flex items-center gap-3">
+            <Star size={15} className="text-[#8696a0]" /> Star
+          </button>
+          
+          <div className="border-t border-[#2a3942]/50 my-1" />
+
+          <button 
+            onClick={() => { 
+              setIsSelectionMode(true);
+              setSelectedMessageIds([menuMessage.id]);
+              setMenuAnchor(null);
+              setMenuMessage(null);
+            }} 
+            className="w-full text-left px-4 py-2 text-[13.5px] hover:bg-[#182229] transition-colors flex items-center gap-3"
+          >
+            <CheckCheck size={15} className="text-[#8696a0]" /> Select
+          </button>
+          
+          <div className="border-t border-[#2a3942]/50 my-1" />
+
+          <button onClick={() => { setMenuAnchor(null); }} className="w-full text-left px-4 py-2 text-[13.5px] hover:bg-[#182229] transition-colors flex items-center gap-3">
+            <ShieldAlert size={15} className="text-[#8696a0]" /> Report
+          </button>
+          <button 
+            onClick={() => { 
+              setShowDeleteModal(true);
+              setMenuAnchor(null);
+            }} 
+            className="w-full text-left px-4 py-2 text-[13.5px] text-[#ff5c5c] hover:bg-[#182229] transition-colors flex items-center gap-3"
+          >
+            <Trash2 size={15} className="text-[#ff5c5c]" /> Delete
+          </button>
+        </div>
+      )}
+
+      {/* Elegant Deletion Confirmation Modal */}
+      {showDeleteModal && (
+        <div className="fixed inset-0 z-[200] flex items-center justify-center bg-black/60 backdrop-blur-sm">
+          <div className="bg-[#222e35] border border-[#2a3942] rounded-xl shadow-2xl w-[320px] p-6 text-[#e9edef] animate-scaleUp">
+            <h3 className="text-[17px] font-medium mb-3">Delete message?</h3>
+            <p className="text-[13.5px] text-[#8696a0] mb-6">
+              {isSelectionMode
+                ? `Do you want to delete ${selectedMessageIds.length} selected messages?`
+                : 'Do you want to delete this message?'}
+            </p>
+            <div className="flex flex-col gap-2">
+              {isEligibleForEveryoneDelete() && (
+                <button
+                  onClick={() => handleExecuteDelete('everyone')}
+                  className="w-full py-2.5 px-4 rounded-lg bg-[#00a884] text-[#111b21] hover:bg-[#00a884]/90 text-[14px] font-semibold transition-colors"
+                >
+                  Delete for Everyone
+                </button>
+              )}
+              <button
+                onClick={() => handleExecuteDelete('me')}
+                className="w-full py-2.5 px-4 rounded-lg bg-[#2a3942] text-[#e9edef] hover:bg-[#3b4a54] text-[14px] font-semibold transition-colors"
+              >
+                Delete for Me
+              </button>
+              <button
+                onClick={() => { 
+                  setShowDeleteModal(false); 
+                  if (!isSelectionMode) setMenuMessage(null);
+                }}
+                className="w-full py-2.5 px-4 rounded-lg text-[#8696a0] hover:text-[#e9edef] text-[14px] font-medium transition-colors"
+              >
+                Cancel
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }
@@ -252,33 +477,73 @@ function MessageBubble({
   message,
   onShowStatus,
   showStatus,
+  isSelectionMode,
+  isSelected,
+  onToggleSelect,
+  onOpenDropdown,
 }: {
   message: DashMessage;
   onShowStatus: (id: string) => void;
   showStatus: boolean;
+  isSelectionMode: boolean;
+  isSelected: boolean;
+  onToggleSelect: () => void;
+  onOpenDropdown: (e: React.MouseEvent, msg: DashMessage) => void;
 }) {
   const isMe = message.direction === 'outbound';
+  const isRevoked = message.message_type === 'revoked' || message.content === '🚫 This message was deleted';
 
   return (
-    <div className={`flex ${isMe ? 'justify-end' : 'justify-start'} mb-1 px-2`}>
+    <div className={`flex items-center gap-3 mb-1 px-2 ${isMe ? 'justify-end' : 'justify-start'} group/row`}>
+      {isSelectionMode && (
+        <input 
+          type="checkbox" 
+          checked={isSelected}
+          onChange={onToggleSelect}
+          className="w-4 h-4 cursor-pointer accent-[#00a884] shrink-0 z-10"
+        />
+      )}
+
       <div
-        className={`relative max-w-[65%] px-3 py-1.5 rounded-lg text-[14px] leading-[19px] shadow-sm ${
+        onClick={isSelectionMode ? onToggleSelect : undefined}
+        className={`relative max-w-[65%] px-3 py-1.5 rounded-lg text-[14px] leading-[19px] shadow-sm group/bubble ${
+          isSelectionMode ? 'cursor-pointer hover:opacity-95' : ''
+        } ${
           isMe
             ? 'bg-[#005c4b] text-[#e9edef] rounded-tr-none'
             : 'bg-[#202c33] text-[#e9edef] rounded-tl-none'
         }`}
       >
+        {/* Dropdown Chevron matching WhatsApp hover button */}
+        {!isSelectionMode && !isRevoked && (
+          <button
+            onClick={(e) => {
+              e.stopPropagation();
+              onOpenDropdown(e, message);
+            }}
+            className="absolute top-1 right-1 p-0.5 rounded text-[#8696a0] hover:text-[#e9edef] hover:bg-[#2a3942]/30 opacity-0 group-hover/bubble:opacity-100 transition-opacity z-10"
+          >
+            <ChevronDown size={14} />
+          </button>
+        )}
+
         {/* Content */}
-        <span className="whitespace-pre-wrap break-words">{message.content}</span>
+        {isRevoked ? (
+          <span className="italic text-[#8696a0] flex items-center gap-1.5">
+            <span>🚫</span> This message was deleted
+          </span>
+        ) : (
+          <span className="whitespace-pre-wrap break-words pr-2">{message.content}</span>
+        )}
 
         {/* Meta row: time + status */}
         <span className="float-right ml-3 mt-1 flex items-center gap-1 text-[11px] text-[#ffffff99] select-none">
           <span>{formatTime(message.created_at)}</span>
-          {isMe && <StatusIcon status={message.status} onClick={() => onShowStatus(message.id)} />}
+          {isMe && !isRevoked && <StatusIcon status={message.status} onClick={() => onShowStatus(message.id)} />}
         </span>
 
         {/* Status Details Tooltip */}
-        {showStatus && isMe && (
+        {showStatus && isMe && !isRevoked && (
           <div className="absolute bottom-full right-0 mb-1 bg-[#182229] border border-[#2a3942] rounded-lg px-4 py-3 text-[12px] shadow-xl z-30 w-[220px]">
             <div className="text-[#e9edef] font-medium mb-2 flex items-center gap-1.5">
               <Info size={14} className="text-[#00a884]" /> Message Info

@@ -199,6 +199,8 @@ export interface DashStore {
     replyToMessagePreview?: { sender_name: string; content: string }
   ) => Promise<void>;
   sendReaction: (to: string, messageId: string, emoji: string, internalMessageId: string) => Promise<void>;
+  deleteMessage: (messageId: string, deleteType: 'me' | 'everyone') => Promise<void>;
+  deleteMessages: (messageIds: string[], deleteType: 'me' | 'everyone') => Promise<void>;
 }
 
 export const useDashStore = create<DashStore>((set, get) => ({
@@ -333,8 +335,9 @@ export const useDashStore = create<DashStore>((set, get) => ({
 
       // Resolve template content dynamically
       const resolvedData = await resolveTemplatesForMessages(data || []);
+      const visibleData = resolvedData.filter((log: any) => !log.metadata?.hidden_for_user);
       
-      const mapped: DashMessage[] = resolvedData.map((log: any) => ({
+      const mapped: DashMessage[] = visibleData.map((log: any) => ({
           id: log.id,
           conversation_id: log.conversation_id,
           direction: log.direction,
@@ -375,7 +378,8 @@ export const useDashStore = create<DashStore>((set, get) => ({
         if (error) throw error;
 
         const currentMessages = get().messages;
-        const mapped = (data || []).map((log: any) => ({
+        const visibleData = (data || []).filter((log: any) => !log.metadata?.hidden_for_user);
+        const mapped = visibleData.map((log: any) => ({
           id: log.id,
           conversation_id: log.conversation_id,
           direction: log.direction,
@@ -483,8 +487,9 @@ export const useDashStore = create<DashStore>((set, get) => ({
 
       // Resolve template content dynamically
       const resolvedData = await resolveTemplatesForMessages(data);
+      const visibleData = resolvedData.filter((log: any) => !log.metadata?.hidden_for_user);
 
-      const olderMapped: DashMessage[] = resolvedData.map((log: any) => ({
+      const olderMapped: DashMessage[] = visibleData.map((log: any) => ({
         id: log.id,
         conversation_id: log.conversation_id,
         direction: log.direction,
@@ -664,6 +669,125 @@ export const useDashStore = create<DashStore>((set, get) => ({
         ),
         error: err.message
       }));
+    }
+  },
+
+  deleteMessage: async (messageId: string, deleteType: 'me' | 'everyone') => {
+    try {
+      const { data: config } = await supabase
+        .from('whatsapp_portal_configs')
+        .select('phone_number_id, user_id')
+        .limit(1)
+        .maybeSingle();
+
+      if (!config) {
+        throw new Error('WhatsApp configuration not found.');
+      }
+
+      const { data: dbMsg } = await supabase
+        .from('whatsapp_portal_messages')
+        .select('wa_message_id')
+        .eq('id', messageId)
+        .maybeSingle();
+
+      const wamid = dbMsg?.wa_message_id || messageId;
+
+      const res = await fetch('/api/messages/delete', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          message_id: wamid,
+          phone_number_id: config.phone_number_id,
+          user_id: config.user_id,
+          delete_type: deleteType
+        })
+      });
+
+      const resData = await res.json();
+      if (!res.ok || !resData.success) {
+        throw new Error(resData.error || 'Failed to delete message');
+      }
+
+      // Update local state
+      if (deleteType === 'me') {
+        set(state => ({
+          messages: state.messages.filter(m => m.id !== messageId)
+        }));
+      } else {
+        set(state => ({
+          messages: state.messages.map(m => 
+            m.id === messageId 
+              ? { ...m, content: '🚫 This message was deleted', message_type: 'revoked', metadata: { ...m.metadata, revoked: true } }
+              : m
+          )
+        }));
+      }
+    } catch (err: any) {
+      console.error('Failed to delete message:', err);
+      set({ error: err.message });
+      throw err;
+    }
+  },
+
+  deleteMessages: async (messageIds: string[], deleteType: 'me' | 'everyone') => {
+    try {
+      const { data: config } = await supabase
+        .from('whatsapp_portal_configs')
+        .select('phone_number_id, user_id')
+        .limit(1)
+        .maybeSingle();
+
+      if (!config) {
+        throw new Error('WhatsApp configuration not found.');
+      }
+
+      for (const msgId of messageIds) {
+        const { data: dbMsg } = await supabase
+          .from('whatsapp_portal_messages')
+          .select('wa_message_id')
+          .eq('id', msgId)
+          .maybeSingle();
+
+        const wamid = dbMsg?.wa_message_id || msgId;
+
+        try {
+          const res = await fetch('/api/messages/delete', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+              message_id: wamid,
+              phone_number_id: config.phone_number_id,
+              user_id: config.user_id,
+              delete_type: deleteType
+            })
+          });
+          const resData = await res.json();
+          if (!res.ok || !resData.success) {
+            console.error(`Failed to delete message ${msgId}:`, resData.error);
+          }
+        } catch (e) {
+          console.error(`Error deleting message ${msgId}:`, e);
+        }
+      }
+
+      // Realign local state
+      if (deleteType === 'me') {
+        set(state => ({
+          messages: state.messages.filter(m => !messageIds.includes(m.id))
+        }));
+      } else {
+        set(state => ({
+          messages: state.messages.map(m => 
+            messageIds.includes(m.id)
+              ? { ...m, content: '🚫 This message was deleted', message_type: 'revoked', metadata: { ...m.metadata, revoked: true } }
+              : m
+          )
+        }));
+      }
+    } catch (err: any) {
+      console.error('Failed to delete messages:', err);
+      set({ error: err.message });
+      throw err;
     }
   }
 }));

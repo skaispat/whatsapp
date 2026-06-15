@@ -63,6 +63,11 @@ async function resolveTemplatesForMessages(rawMessages: any[]): Promise<any[]> {
         const normalizedKey = msg.template_name.toLowerCase().replace(/_/g, '').trim();
         const template = templateMap[normalizedKey];
         const parameters = msg.metadata?.parameters || [];
+        const buttons = msg.metadata?.buttons || [];
+        
+        if (buttons.length > 0) {
+          msg.buttons = buttons;
+        }
 
         if (template) {
           let paramIndex = 0;

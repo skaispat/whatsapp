@@ -29,7 +29,7 @@ export async function POST(request: NextRequest) {
     
     const { data: allTemplates, error: fetchError } = await supabase
       .from('whatsapp_portal_templates')
-      .select('template_name, body, header, footer')
+      .select('template_name, body, header, footer, buttons')
       .eq('user_id', user_id);
 
     if (fetchError) console.error('Error fetching template list:', fetchError);
@@ -44,7 +44,7 @@ export async function POST(request: NextRequest) {
     });
 
     // Find template by matching normalized versions string-to-string
-    const matchedTemplate = (allTemplates || []).find((t: { template_name: string; body?: string | null; header?: string | null; footer?: string | null }) => 
+    const matchedTemplate = (allTemplates || []).find((t: { template_name: string; body?: string | null; header?: string | null; footer?: string | null; buttons?: any[] }) => 
       t.template_name.toLowerCase().replace(/_/g, '').trim() === targetNormalized
     );
 
@@ -107,8 +107,9 @@ export async function POST(request: NextRequest) {
 
     // 4. Upsert Message with PERFECT metadata column nesting alignment!
     const metadata = {
-      parameters: cleanTrackingVars,
-      media_url: resolvedMediaUrl
+      parameters: cleanTrackingVars || [],
+      media_url: resolvedMediaUrl,
+      buttons: matchedTemplate?.buttons || []
     }; // 👈 Fixes the store.ts dynamic lookup pass!
 
     const { data: message, error: msgError } = await supabase

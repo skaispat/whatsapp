@@ -33,16 +33,20 @@ export async function GET(request: NextRequest) {
 
     // 2.5 Sync templates to the local DB table (whatsapp_portal_templates)
     if (metaTemplates && metaTemplates.length > 0) {
-      const dbTemplates = metaTemplates.map((t: any) => ({
-        user_id: activeUserId,
-        template_name: t.name,
-        category: t.category,
-        language: t.language,
-        status: t.status,
-        body: t.body || '',
-        header: t.header || '',
-        footer: t.footer || '',
-      }));
+      const dbTemplates = metaTemplates.map((t: any) => {
+        const buttonsComponent = (t.components || []).find((c: any) => c.type === 'BUTTONS');
+        return {
+          user_id: activeUserId,
+          template_name: t.name,
+          category: t.category,
+          language: t.language,
+          status: t.status,
+          body: t.body || '',
+          header: t.header || '',
+          footer: t.footer || '',
+          buttons: buttonsComponent?.buttons || t.buttons || [],
+        };
+      });
 
       const { error: syncErr } = await supabase
         .from('whatsapp_portal_templates')

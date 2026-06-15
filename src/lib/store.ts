@@ -21,37 +21,38 @@ async function resolveTemplatesForMessages(rawMessages: any[]): Promise<any[]> {
   const userId = rawMessages.find((m: any) => m.user_id)?.user_id;
 
   try {
-    // Query template details (body, header, footer) from supabase
-    let query = supabase.from('whatsapp_portal_templates').select('template_name, body, header, footer');
+    // Query template details from supabase
+    let query = supabase.from('whatsapp_portal_templates').select('*');
     if (userId) {
       query = query.eq('user_id', userId);
     }
     
     let { data: templates, error } = await query;
 
-    // Fallback if the footer column doesn't exist in this database schema version
-    if (error && (error.code === '42703' || error.message?.toLowerCase().includes('footer'))) {
-      console.warn('⚠️ whatsapp_templates does not have a "footer" column. Retrying without it.');
-      let retryQuery = supabase.from('whatsapp_portal_templates').select('template_name, body, header');
-      if (userId) {
-        retryQuery = retryQuery.eq('user_id', userId);
-      }
-      const retryResult = await retryQuery;
-      templates = retryResult.data;
-    } else if (error) {
-      console.error('Error fetching template bodies:', error);
+    if (error) {
+      console.error('Error fetching template details:', error);
       return rawMessages;
     }
 
     // Map normalized template_name -> template object
-    const templateMap: Record<string, { body: string; header?: string; footer?: string }> = {};
+    const templateMap: Record<string, { body: string; header?: string; footer?: string; buttons?: any[] }> = {};
     if (templates) {
       templates.forEach((t: any) => {
         const normalizedKey = t.template_name.toLowerCase().replace(/_/g, '').trim();
+        
+        let extractedButtons = t.buttons || [];
+        if ((!extractedButtons || extractedButtons.length === 0) && t.components && Array.isArray(t.components)) {
+          const btnComponent = t.components.find((c: any) => c.type === 'BUTTONS');
+          if (btnComponent && btnComponent.buttons) {
+            extractedButtons = btnComponent.buttons;
+          }
+        }
+
         templateMap[normalizedKey] = {
           body: t.body || '',
           header: t.header || '',
           footer: t.footer || '',
+          buttons: extractedButtons,
         };
       });
     }
@@ -90,6 +91,11 @@ async function resolveTemplatesForMessages(rawMessages: any[]): Promise<any[]> {
           }
 
           msg.content = fullContent;
+          
+          // Attach buttons if they exist and aren't already on the message
+          if (template.buttons && template.buttons.length > 0 && (!msg.buttons || msg.buttons.length === 0)) {
+            msg.buttons = template.buttons;
+          }
         } else if (!msg.content) {
           msg.content = `[Template: ${msg.template_name}]`;
         }

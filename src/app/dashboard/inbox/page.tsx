@@ -737,7 +737,7 @@ export default function InboxPage() {
           <div 
             ref={scrollContainerRef}
             onScroll={handleScroll}
-            className="flex-1 overflow-y-auto px-4 py-4 flex flex-col gap-3 z-10"
+            className="flex-1 overflow-y-auto py-4 flex flex-col gap-3 z-10"
           >
             {loadingOlderMessages && (
               <div className="flex justify-center py-2 shrink-0">
@@ -766,33 +766,33 @@ export default function InboxPage() {
                   <div 
                     key={m.id} 
                     id={`msg-${m.id}`}
-                    className={`flex items-center gap-3 ${isOut ? 'justify-end' : 'justify-start'} group/row`}
+                    className={`w-full flex items-center px-4 py-1.5 transition-colors relative group/row ${
+                      isSelectionMode ? 'cursor-pointer hover:bg-white/5' : ''
+                    } ${
+                      isSelected && isSelectionMode ? 'bg-[#00a884]/8' : ''
+                    }`}
+                    onClick={isSelectionMode ? () => {
+                      if (isSelected) {
+                        setSelectedMessageIds(selectedMessageIds.filter(id => id !== m.id));
+                      } else {
+                        setSelectedMessageIds([...selectedMessageIds, m.id]);
+                      }
+                    } : undefined}
                   >
                     {isSelectionMode && (
-                      <input 
-                        type="checkbox" 
-                        checked={isSelected}
-                        onChange={() => {
-                          if (isSelected) {
-                            setSelectedMessageIds(selectedMessageIds.filter(id => id !== m.id));
-                          } else {
-                            setSelectedMessageIds([...selectedMessageIds, m.id]);
-                          }
-                        }}
-                        className="w-4 h-4 cursor-pointer accent-[#00a884] shrink-0 z-10 animate-fadeIn"
-                      />
+                      <div className="flex items-center justify-center pr-4 shrink-0 select-none">
+                        <div className={`w-5 h-5 rounded border flex items-center justify-center transition-colors ${
+                          isSelected 
+                            ? 'bg-[#00a884] border-[#00a884] text-white' 
+                            : 'border-[#8696a0]'
+                        }`}>
+                          {isSelected && <Check size={14} strokeWidth={3} />}
+                        </div>
+                      </div>
                     )}
-                    <div 
-                      onClick={isSelectionMode ? () => {
-                        if (isSelected) {
-                          setSelectedMessageIds(selectedMessageIds.filter(id => id !== m.id));
-                        } else {
-                          setSelectedMessageIds([...selectedMessageIds, m.id]);
-                        }
-                      } : undefined}
-                      className={`relative group max-w-[85%] md:max-w-[70%] ${isSelectionMode ? 'cursor-pointer hover:opacity-95' : ''}`}
-                    >
-                      {/* Bubble */}
+                    <div className={`flex-1 flex ${isOut ? 'justify-end' : 'justify-start'}`}>
+                      <div className="relative group max-w-[85%] md:max-w-[70%]">
+                        {/* Bubble */}
                       <div 
                         id={m.wa_message_id ? `msg-${m.wa_message_id}` : undefined}
                         className={`
@@ -1205,6 +1205,7 @@ export default function InboxPage() {
                       </div>
                     </div>
                   </div>
+                </div>
                   );
                 })}
               </div>

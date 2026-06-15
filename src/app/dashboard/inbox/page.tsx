@@ -19,7 +19,7 @@ import {
   Search, Send, Image as ImageIcon, FileText, Smile, Phone,
   MoreVertical, CheckCheck, Check, Archive, VolumeX, ShieldAlert,
   UserX, UserCheck, ChevronLeft, ChevronRight, SmilePlus, Download, Play, Paperclip, X, ZoomIn, ZoomOut,
-  Reply,
+  Reply, ChevronDown, Trash2, Copy, Forward, Pin, Star,
 } from 'lucide-react';
 import { useMessageNavigation } from '@/hooks/useMessageNavigation';
 import { ReplyPreview } from '@/components/ReplyPreview';
@@ -167,6 +167,8 @@ export default function InboxPage() {
     fetchOlderMessages,
     replyingToMessage,
     setReplyingToMessage,
+    deleteMessage,
+    deleteMessages,
   } = useDashStore();
 
   const { activeHighlightId, navigateToMessage, loading: loadingNav, error: navError } = useMessageNavigation();
@@ -267,6 +269,55 @@ export default function InboxPage() {
 
   // Track downloaded status for PDF and other media items
   const [downloadedMedia, setDownloadedMedia] = useState<Record<string, boolean>>({});
+
+  // Selection / Deletion states
+  const [selectedMessageIds, setSelectedMessageIds] = useState<string[]>([]);
+  const [isSelectionMode, setIsSelectionMode] = useState(false);
+  const [menuAnchor, setMenuAnchor] = useState<{ x: number; y: number } | null>(null);
+  const [menuMessage, setMenuMessage] = useState<any>(null);
+  const [showDeleteModal, setShowDeleteModal] = useState(false);
+
+  const isEligibleForEveryoneDelete = () => {
+    const msgsToCheck = isSelectionMode
+      ? messages.filter((m) => selectedMessageIds.includes(m.id))
+      : menuMessage
+      ? [menuMessage]
+      : [];
+
+    if (msgsToCheck.length === 0) return false;
+
+    return msgsToCheck.every((msg) => {
+      if (msg.direction !== 'outbound') return false;
+      const msgTime = new Date(msg.created_at).getTime();
+      const hoursElapsed = (Date.now() - msgTime) / (1000 * 60 * 60);
+      return hoursElapsed <= 24;
+    });
+  };
+
+  const handleExecuteDelete = async (type: 'me' | 'everyone') => {
+    setShowDeleteModal(false);
+    const idsToDelete = isSelectionMode
+      ? selectedMessageIds
+      : menuMessage
+      ? [menuMessage.id]
+      : [];
+
+    if (idsToDelete.length === 0) return;
+
+    try {
+      if (idsToDelete.length === 1) {
+        await deleteMessage(idsToDelete[0], type);
+      } else {
+        await deleteMessages(idsToDelete, type);
+      }
+    } catch (err) {
+      console.error('Delete failed:', err);
+    } finally {
+      setIsSelectionMode(false);
+      setSelectedMessageIds([]);
+      setMenuMessage(null);
+    }
+  };
 
   const handleDownloadMedia = async (url: string, fileName: string, messageId: string) => {
     try {
@@ -709,22 +760,60 @@ export default function InboxPage() {
 
                 {group.messages.map(m => {
                   const isOut = m.direction === 'outbound';
+                  const isSelected = selectedMessageIds.includes(m.id);
+                  const isRevoked = m.message_type === 'revoked' || m.content === '🚫 This message was deleted';
                   return (
                   <div 
                     key={m.id} 
                     id={`msg-${m.id}`}
-                    className={`flex ${isOut ? 'justify-end' : 'justify-start'}`}
+                    className={`flex items-center gap-3 ${isOut ? 'justify-end' : 'justify-start'} group/row`}
                   >
-                    <div className="relative group max-w-[85%] md:max-w-[70%]">
+                    {isSelectionMode && (
+                      <input 
+                        type="checkbox" 
+                        checked={isSelected}
+                        onChange={() => {
+                          if (isSelected) {
+                            setSelectedMessageIds(selectedMessageIds.filter(id => id !== m.id));
+                          } else {
+                            setSelectedMessageIds([...selectedMessageIds, m.id]);
+                          }
+                        }}
+                        className="w-4 h-4 cursor-pointer accent-[#00a884] shrink-0 z-10 animate-fadeIn"
+                      />
+                    )}
+                    <div 
+                      onClick={isSelectionMode ? () => {
+                        if (isSelected) {
+                          setSelectedMessageIds(selectedMessageIds.filter(id => id !== m.id));
+                        } else {
+                          setSelectedMessageIds([...selectedMessageIds, m.id]);
+                        }
+                      } : undefined}
+                      className={`relative group max-w-[85%] md:max-w-[70%] ${isSelectionMode ? 'cursor-pointer hover:opacity-95' : ''}`}
+                    >
                       {/* Bubble */}
                       <div 
                         id={m.wa_message_id ? `msg-${m.wa_message_id}` : undefined}
                         className={`
                           ${isOut ? 'chat-bubble-out' : 'chat-bubble-in'} 
-                          relative transition-all duration-300
+                          relative transition-all duration-300 group/bubble
                           ${(activeHighlightId === m.id || (m.wa_message_id && activeHighlightId === m.wa_message_id)) ? 'animate-messageHighlight' : ''}
                         `}
                       >
+                        {!isSelectionMode && !isRevoked && (
+                          <button
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              const rect = e.currentTarget.getBoundingClientRect();
+                              setMenuAnchor({ x: rect.left, y: rect.bottom + window.scrollY });
+                              setMenuMessage(m);
+                            }}
+                            className="absolute top-1.5 right-1.5 p-0.5 rounded text-[#8696a0] hover:text-[#e9edef] hover:bg-[#2a3942]/30 opacity-0 group-hover/bubble:opacity-100 transition-opacity z-20 cursor-pointer"
+                          >
+                            <ChevronDown size={14} />
+                          </button>
+                        )}
                         {/* Reply Preview inside Bubble */}
                         {m.context_message_id && (() => {
                           const parentMsg = messages.find(pm => pm.id === m.context_message_id || pm.wa_message_id === m.context_message_id);
@@ -841,7 +930,11 @@ export default function InboxPage() {
                         })()}
 
                         {/* Media Render */}
-                        {(() => {
+                        {isRevoked ? (
+                          <span className="italic text-[#8696a0] flex items-center gap-1.5 py-1 select-none pr-6">
+                            <span>🚫</span> This message was deleted
+                          </span>
+                        ) : (() => {
                           const mediaObj = m.media && Array.isArray(m.media) && m.media.length > 0 ? m.media[0] : null;
                           const mediaId = mediaObj?.id || m.media_url;
                           const mediaType = m.message_type;
@@ -1120,7 +1213,34 @@ export default function InboxPage() {
           </div>
 
           {/* ── Input Area ─────────────────────────────────────────── */}
-          <div className="px-4 py-3 bg-[var(--color-wa-surface)] border-t border-[var(--color-wa-border)] flex-shrink-0 z-10 relative">
+          {isSelectionMode ? (
+            <div className="px-6 py-3 bg-[var(--color-wa-surface)] border-t border-[var(--color-wa-border)] flex-shrink-0 z-10 relative flex items-center justify-between h-[60px] animate-slideUp">
+              <div className="flex items-center gap-4 text-[var(--color-wa-text)]">
+                <button
+                  onClick={() => {
+                    setIsSelectionMode(false);
+                    setSelectedMessageIds([]);
+                  }}
+                  className="p-1.5 hover:bg-[var(--color-wa-bg)] rounded-full transition-colors text-[var(--color-wa-muted)] hover:text-[var(--color-wa-text)] cursor-pointer"
+                >
+                  <X size={20} />
+                </button>
+                <span className="text-sm font-medium">
+                  {selectedMessageIds.length} selected
+                </span>
+              </div>
+
+              <button
+                onClick={() => setShowDeleteModal(true)}
+                disabled={selectedMessageIds.length === 0}
+                className="w-10 h-10 rounded-full bg-[#ff5c5c]/10 text-[#ff5c5c] flex items-center justify-center shrink-0 hover:bg-[#ff5c5c]/20 transition-all disabled:opacity-40 disabled:cursor-not-allowed active:scale-95 cursor-pointer"
+                title="Delete Selected"
+              >
+                <Trash2 size={18} />
+              </button>
+            </div>
+          ) : (
+            <div className="px-4 py-3 bg-[var(--color-wa-surface)] border-t border-[var(--color-wa-border)] flex-shrink-0 z-10 relative">
             {/* Input Reply Preview */}
             {replyingToMessage && (
               <div className="mb-2 bg-[#f0f2f5] p-1 rounded-lg border border-[var(--color-wa-border)] animate-fadeIn">
@@ -1340,6 +1460,7 @@ export default function InboxPage() {
               </>
             )}
           </div>
+          )}
         </div>
       ) : (
         <div className="flex-1 hidden md:flex flex-col items-center justify-center gap-4 bg-[var(--color-wa-bg)]">
@@ -1502,6 +1623,114 @@ export default function InboxPage() {
           </div>
         );
       })()}
+
+      {/* Context/Dropdown Menu Backing Overlay */}
+      {menuAnchor && (
+        <div 
+          className="fixed inset-0 z-[99]" 
+          onClick={() => { setMenuAnchor(null); setMenuMessage(null); }} 
+          onContextMenu={(e) => { e.preventDefault(); setMenuAnchor(null); setMenuMessage(null); }}
+        />
+      )}
+
+      {/* Custom Dropdown Menu matching WhatsApp Web */}
+      {menuAnchor && menuMessage && (
+        <div 
+          className="fixed z-[100] bg-[#233138] border border-[#2f3b43] rounded-lg shadow-xl py-1.5 w-[170px] text-[#e9edef] overflow-hidden animate-fadeIn"
+          style={{ top: Math.min(menuAnchor.y, window.innerHeight - 320), left: Math.min(menuAnchor.x - 140, window.innerWidth - 190) }}
+        >
+          <button onClick={() => { setMenuAnchor(null); }} className="w-full text-left px-4 py-2 text-[13.5px] hover:bg-[#182229] transition-colors flex items-center gap-3 cursor-pointer">
+            <Reply size={15} className="text-[#8696a0]" /> Reply
+          </button>
+          <button 
+            onClick={() => { 
+              navigator.clipboard.writeText(menuMessage.content);
+              setMenuAnchor(null);
+              setMenuMessage(null);
+            }} 
+            className="w-full text-left px-4 py-2 text-[13.5px] hover:bg-[#182229] transition-colors flex items-center gap-3 cursor-pointer"
+          >
+            <Copy size={15} className="text-[#8696a0]" /> Copy
+          </button>
+          <button onClick={() => { setMenuAnchor(null); }} className="w-full text-left px-4 py-2 text-[13.5px] hover:bg-[#182229] transition-colors flex items-center gap-3 cursor-pointer">
+            <Forward size={15} className="text-[#8696a0]" /> Forward
+          </button>
+          <button onClick={() => { setMenuAnchor(null); }} className="w-full text-left px-4 py-2 text-[13.5px] hover:bg-[#182229] transition-colors flex items-center gap-3 cursor-pointer">
+            <Pin size={15} className="text-[#8696a0]" /> Pin
+          </button>
+          <button onClick={() => { setMenuAnchor(null); }} className="w-full text-left px-4 py-2 text-[13.5px] hover:bg-[#182229] transition-colors flex items-center gap-3 cursor-pointer">
+            <Star size={15} className="text-[#8696a0]" /> Star
+          </button>
+          
+          <div className="border-t border-[#2a3942]/50 my-1" />
+
+          <button 
+            onClick={() => { 
+              setIsSelectionMode(true);
+              setSelectedMessageIds([menuMessage.id]);
+              setMenuAnchor(null);
+              setMenuMessage(null);
+            }} 
+            className="w-full text-left px-4 py-2 text-[13.5px] hover:bg-[#182229] transition-colors flex items-center gap-3 cursor-pointer"
+          >
+            <CheckCheck size={15} className="text-[#8696a0]" /> Select
+          </button>
+          
+          <div className="border-t border-[#2a3942]/50 my-1" />
+
+          <button onClick={() => { setMenuAnchor(null); }} className="w-full text-left px-4 py-2 text-[13.5px] hover:bg-[#182229] transition-colors flex items-center gap-3 cursor-pointer">
+            <ShieldAlert size={15} className="text-[#8696a0]" /> Report
+          </button>
+          <button 
+            onClick={() => { 
+              setShowDeleteModal(true);
+              setMenuAnchor(null);
+            }} 
+            className="w-full text-left px-4 py-2 text-[13.5px] text-[#ff5c5c] hover:bg-[#182229] transition-colors flex items-center gap-3 cursor-pointer"
+          >
+            <Trash2 size={15} className="text-[#ff5c5c]" /> Delete
+          </button>
+        </div>
+      )}
+
+      {/* Elegant Deletion Confirmation Modal */}
+      {showDeleteModal && (
+        <div className="fixed inset-0 z-[200] flex items-center justify-center bg-black/60 backdrop-blur-sm animate-fadeIn">
+          <div className="bg-[#222e35] border border-[#2a3942] rounded-xl shadow-2xl w-[320px] p-6 text-[#e9edef] animate-scaleUp">
+            <h3 className="text-[17px] font-medium mb-3">Delete message?</h3>
+            <p className="text-[13.5px] text-[#8696a0] mb-6">
+              {isSelectionMode
+                ? `Do you want to delete ${selectedMessageIds.length} selected messages?`
+                : 'Do you want to delete this message?'}
+            </p>
+            <div className="flex flex-col gap-2">
+              {isEligibleForEveryoneDelete() && (
+                <button
+                  onClick={() => handleExecuteDelete('everyone')}
+                  className="w-full py-2.5 px-4 rounded-lg bg-[#00a884] text-[#111b21] hover:bg-[#00a884]/90 text-[14px] font-semibold transition-colors cursor-pointer"
+                >
+                  Delete for Everyone
+                </button>
+              )}
+              <button
+                onClick={() => handleExecuteDelete('me')}
+                className="w-full py-2.5 px-4 rounded-lg bg-[#2a3942] text-[#e9edef] hover:bg-[#3b4a54] text-[14px] font-semibold transition-colors cursor-pointer"
+              >
+                Delete for Me
+              </button>
+              <button
+                onClick={() => { 
+                  setShowDeleteModal(false); 
+                  if (!isSelectionMode) setMenuMessage(null);
+                }}
+                className="w-full py-2.5 px-4 rounded-lg text-[#8696a0] hover:text-[#e9edef] text-[14px] font-medium transition-colors cursor-pointer"
+              >
+                Cancel
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }

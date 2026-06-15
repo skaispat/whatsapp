@@ -151,6 +151,44 @@ function groupByDate(messages: any[]) {
 
 /* ─── Page ───────────────────────────────────────────────────── */
 
+const getMessageBodyOnly = (msg: any, templatesList: any[]) => {
+  if (!msg) return '';
+  if (msg.message_type !== 'template' && !msg.template_name) {
+    return msg.content || '';
+  }
+
+  const normalizedKey = msg.template_name?.toLowerCase().replace(/_/g, '').trim();
+  const template = templatesList.find((t: any) => t.template_name?.toLowerCase().replace(/_/g, '').trim() === normalizedKey);
+  
+  if (template) {
+    const parameters = msg.metadata?.parameters || [];
+    let paramIndex = 0;
+    const bodyText = template.body || '';
+    
+    const resolvedBody = bodyText.replace(/\{\{(\d+)\}\}/g, () => {
+      const val = parameters[paramIndex++];
+      return val !== undefined && val !== null ? String(val) : '';
+    });
+    return resolvedBody;
+  }
+
+  let parsedContent = msg.content || '';
+  
+  if (parsedContent.startsWith('*')) {
+    const headerEndIndex = parsedContent.indexOf('*\n\n');
+    if (headerEndIndex !== -1) {
+      parsedContent = parsedContent.substring(headerEndIndex + 3);
+    }
+  }
+  
+  const footerStartIndex = parsedContent.lastIndexOf('\n\n_');
+  if (footerStartIndex !== -1 && parsedContent.endsWith('_')) {
+    parsedContent = parsedContent.substring(0, footerStartIndex);
+  }
+  
+  return parsedContent;
+};
+
 export default function InboxPage() {
   const {
     conversations,
@@ -169,6 +207,7 @@ export default function InboxPage() {
     setReplyingToMessage,
     deleteMessage,
     deleteMessages,
+    templates,
   } = useDashStore();
 
   const { activeHighlightId, navigateToMessage, loading: loadingNav, error: navError } = useMessageNavigation();
@@ -753,7 +792,7 @@ export default function InboxPage() {
               <div key={group.date} className="flex flex-col gap-3">
                 {/* Date Divider */}
                 <div className="flex justify-center my-2 sticky top-2 z-20">
-                  <span className="bg-[#182229] text-[#8696a0] text-[11px] px-3 py-1.5 rounded-[7px] shadow-sm font-medium uppercase tracking-wide">
+                  <span className="bg-[#ffffff] text-[#54656f] border border-[#e9edef] text-[11px] px-3 py-1.5 rounded-[7px] shadow-sm font-medium uppercase tracking-wide">
                     {group.date}
                   </span>
                 </div>
@@ -1637,33 +1676,31 @@ export default function InboxPage() {
       {/* Custom Dropdown Menu matching WhatsApp Web */}
       {menuAnchor && menuMessage && (
         <div 
-          className="fixed z-[100] bg-[#233138] border border-[#2f3b43] rounded-lg shadow-xl py-1.5 w-[170px] text-[#e9edef] overflow-hidden animate-fadeIn"
-          style={{ top: Math.min(menuAnchor.y, window.innerHeight - 320), left: Math.min(menuAnchor.x - 140, window.innerWidth - 190) }}
+          className="fixed z-[100] bg-[#ffffff] border border-[#e9edef] rounded-lg shadow-lg py-1.5 w-[170px] text-[#111b21] overflow-hidden animate-fadeIn"
+          style={{ top: Math.min(menuAnchor.y, window.innerHeight - 200), left: Math.min(menuAnchor.x - 140, window.innerWidth - 190) }}
         >
-          <button onClick={() => { setMenuAnchor(null); }} className="w-full text-left px-4 py-2 text-[13.5px] hover:bg-[#182229] transition-colors flex items-center gap-3 cursor-pointer">
-            <Reply size={15} className="text-[#8696a0]" /> Reply
-          </button>
           <button 
             onClick={() => { 
-              navigator.clipboard.writeText(menuMessage.content);
+              setReplyingToMessage(menuMessage);
               setMenuAnchor(null);
               setMenuMessage(null);
             }} 
-            className="w-full text-left px-4 py-2 text-[13.5px] hover:bg-[#182229] transition-colors flex items-center gap-3 cursor-pointer"
+            className="w-full text-left px-4 py-2 text-[13.5px] hover:bg-[#f5f6f6] text-[#111b21] transition-colors flex items-center gap-3 cursor-pointer"
           >
-            <Copy size={15} className="text-[#8696a0]" /> Copy
+            <Reply size={15} className="text-[#54656f]" /> Reply
           </button>
-          <button onClick={() => { setMenuAnchor(null); }} className="w-full text-left px-4 py-2 text-[13.5px] hover:bg-[#182229] transition-colors flex items-center gap-3 cursor-pointer">
-            <Forward size={15} className="text-[#8696a0]" /> Forward
-          </button>
-          <button onClick={() => { setMenuAnchor(null); }} className="w-full text-left px-4 py-2 text-[13.5px] hover:bg-[#182229] transition-colors flex items-center gap-3 cursor-pointer">
-            <Pin size={15} className="text-[#8696a0]" /> Pin
-          </button>
-          <button onClick={() => { setMenuAnchor(null); }} className="w-full text-left px-4 py-2 text-[13.5px] hover:bg-[#182229] transition-colors flex items-center gap-3 cursor-pointer">
-            <Star size={15} className="text-[#8696a0]" /> Star
+          <button 
+            onClick={() => { 
+              navigator.clipboard.writeText(getMessageBodyOnly(menuMessage, templates));
+              setMenuAnchor(null);
+              setMenuMessage(null);
+            }} 
+            className="w-full text-left px-4 py-2 text-[13.5px] hover:bg-[#f5f6f6] text-[#111b21] transition-colors flex items-center gap-3 cursor-pointer"
+          >
+            <Copy size={15} className="text-[#54656f]" /> Copy
           </button>
           
-          <div className="border-t border-[#2a3942]/50 my-1" />
+          <div className="border-t border-[#f0f2f5] my-1" />
 
           <button 
             onClick={() => { 
@@ -1672,22 +1709,19 @@ export default function InboxPage() {
               setMenuAnchor(null);
               setMenuMessage(null);
             }} 
-            className="w-full text-left px-4 py-2 text-[13.5px] hover:bg-[#182229] transition-colors flex items-center gap-3 cursor-pointer"
+            className="w-full text-left px-4 py-2 text-[13.5px] hover:bg-[#f5f6f6] text-[#111b21] transition-colors flex items-center gap-3 cursor-pointer"
           >
-            <CheckCheck size={15} className="text-[#8696a0]" /> Select
+            <CheckCheck size={15} className="text-[#54656f]" /> Select
           </button>
           
-          <div className="border-t border-[#2a3942]/50 my-1" />
+          <div className="border-t border-[#f0f2f5] my-1" />
 
-          <button onClick={() => { setMenuAnchor(null); }} className="w-full text-left px-4 py-2 text-[13.5px] hover:bg-[#182229] transition-colors flex items-center gap-3 cursor-pointer">
-            <ShieldAlert size={15} className="text-[#8696a0]" /> Report
-          </button>
           <button 
             onClick={() => { 
               setShowDeleteModal(true);
               setMenuAnchor(null);
             }} 
-            className="w-full text-left px-4 py-2 text-[13.5px] text-[#ff5c5c] hover:bg-[#182229] transition-colors flex items-center gap-3 cursor-pointer"
+            className="w-full text-left px-4 py-2 text-[13.5px] text-[#ff5c5c] hover:bg-[#f5f6f6] transition-colors flex items-center gap-3 cursor-pointer"
           >
             <Trash2 size={15} className="text-[#ff5c5c]" /> Delete
           </button>

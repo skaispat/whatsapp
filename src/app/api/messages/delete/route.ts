@@ -100,17 +100,16 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    // 4c. Time Limit Window Check: Enforce strict 24-hour limit
+    // 4c. Time Limit Window Check: Enforce strict 20-minute limit
     const messageTime = new Date(dbMessage.created_at).getTime();
-    const hoursElapsed = (Date.now() - messageTime) / (1000 * 60 * 60);
+    const minutesElapsed = (Date.now() - messageTime) / (1000 * 60);
 
-    if (hoursElapsed > 24) {
+    if (minutesElapsed > 20) {
       return NextResponse.json(
-        { success: false, error: 'Time window expired. Messages older than 24 hours cannot be deleted for everyone.' },
+        { success: false, error: 'Time window expired. Messages older than 20 minutes cannot be deleted for everyone.' },
         { status: 400 }
       );
     }
-
     // 4d. Retrieve Meta Access Token from config (with environment variable fallback)
     const { data: config, error: configErr } = await supabase
       .from('whatsapp_portal_configs')

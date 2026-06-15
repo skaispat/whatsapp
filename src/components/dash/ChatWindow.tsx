@@ -124,8 +124,8 @@ export default function DashChatWindow() {
     return msgsToCheck.every((msg) => {
       if (msg.direction !== 'outbound') return false;
       const msgTime = new Date(msg.created_at).getTime();
-      const hoursElapsed = (Date.now() - msgTime) / (1000 * 60 * 60);
-      return hoursElapsed <= 24;
+      const minutesElapsed = (Date.now() - msgTime) / (1000 * 60);
+      return minutesElapsed <= 20;
     });
   };
 
@@ -211,7 +211,6 @@ export default function DashChatWindow() {
         </div>
       </div>
 
-      {/* Messages Area */}
       <div className="flex-1 relative overflow-hidden bg-[#0b141a]">
         {/* Background pattern */}
         <div className="absolute inset-0 opacity-[0.04]" style={{
@@ -432,10 +431,10 @@ export default function DashChatWindow() {
 
       {/* Elegant Deletion Confirmation Modal */}
       {showDeleteModal && (
-        <div className="fixed inset-0 z-[200] flex items-center justify-center bg-black/60 backdrop-blur-sm">
-          <div className="bg-[#222e35] border border-[#2a3942] rounded-xl shadow-2xl w-[320px] p-6 text-[#e9edef] animate-scaleUp">
-            <h3 className="text-[17px] font-medium mb-3">Delete message?</h3>
-            <p className="text-[13.5px] text-[#8696a0] mb-6">
+        <div className="fixed inset-0 z-[200] flex items-center justify-center bg-black/60 backdrop-blur-sm animate-fadeIn">
+          <div className="bg-white border border-gray-100 rounded-xl shadow-2xl w-[320px] p-6 text-[#111b21] animate-scaleUp">
+            <h3 className="text-[17px] font-semibold mb-3 text-[#111b21]">Delete message?</h3>
+            <p className="text-[13.5px] text-[#667781] mb-6">
               {isSelectionMode
                 ? `Do you want to delete ${selectedMessageIds.length} selected messages?`
                 : 'Do you want to delete this message?'}
@@ -444,14 +443,14 @@ export default function DashChatWindow() {
               {isEligibleForEveryoneDelete() && (
                 <button
                   onClick={() => handleExecuteDelete('everyone')}
-                  className="w-full py-2.5 px-4 rounded-lg bg-[#00a884] text-[#111b21] hover:bg-[#00a884]/90 text-[14px] font-semibold transition-colors"
+                  className="w-full py-2.5 px-4 rounded-lg bg-[#00a884] text-white hover:bg-[#009071] text-[14px] font-semibold transition-colors cursor-pointer"
                 >
                   Delete for Everyone
                 </button>
               )}
               <button
                 onClick={() => handleExecuteDelete('me')}
-                className="w-full py-2.5 px-4 rounded-lg bg-[#2a3942] text-[#e9edef] hover:bg-[#3b4a54] text-[14px] font-semibold transition-colors"
+                className="w-full py-2.5 px-4 rounded-lg bg-[#f0f2f5] text-[#3b4a54] hover:bg-[#e1e3e6] text-[14px] font-semibold transition-colors cursor-pointer"
               >
                 Delete for Me
               </button>
@@ -460,7 +459,7 @@ export default function DashChatWindow() {
                   setShowDeleteModal(false); 
                   if (!isSelectionMode) setMenuMessage(null);
                 }}
-                className="w-full py-2.5 px-4 rounded-lg text-[#8696a0] hover:text-[#e9edef] text-[14px] font-medium transition-colors"
+                className="w-full py-2.5 px-4 rounded-lg text-[#667781] hover:text-[#111b21] text-[14px] font-medium transition-colors cursor-pointer"
               >
                 Cancel
               </button>

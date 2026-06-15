@@ -32,7 +32,7 @@ export const ReplyPreview: React.FC<ReplyPreviewProps> = ({
     <div
       onClick={onClick}
       className={`
-        flex items-stretch rounded-[6px] overflow-hidden text-left mb-1.5 transition-all select-none
+        w-full min-w-0 flex items-stretch rounded-[6px] overflow-hidden text-left mb-1.5 transition-all select-none
         ${onClick ? 'cursor-pointer hover:bg-black/5 active:bg-black/10' : ''}
         ${
           isOutbound

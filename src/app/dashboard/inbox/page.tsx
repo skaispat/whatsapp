@@ -829,14 +829,14 @@ export default function InboxPage() {
                         </div>
                       </div>
                     )}
-                    <div className={`flex-1 flex ${isOut ? 'justify-end' : 'justify-start'}`}>
-                      <div className="relative group max-w-[85%] md:max-w-[70%]">
+                    <div className={`flex-1 flex ${isOut ? 'justify-end' : 'justify-start'} min-w-0`}>
+                      <div className="relative group max-w-[85%] md:max-w-[70%] min-w-0">
                         {/* Bubble */}
                       <div 
                         id={m.wa_message_id ? `msg-${m.wa_message_id}` : undefined}
                         className={`
                           ${isOut ? 'chat-bubble-out' : 'chat-bubble-in'} 
-                          relative transition-all duration-300 group/bubble
+                          relative transition-all duration-300 group/bubble min-w-0
                           ${(activeHighlightId === m.id || (m.wa_message_id && activeHighlightId === m.wa_message_id)) ? 'animate-messageHighlight' : ''}
                         `}
                       >

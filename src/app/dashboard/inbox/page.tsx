@@ -968,6 +968,42 @@ export default function InboxPage() {
                           );
                         })()}
 
+                        {/* Media URL Attachment Preview from Metadata */}
+                        {(() => {
+                          const mediaUrl = m.metadata?.media_url;
+                          if (!mediaUrl) return null;
+
+                          const lowerUrl = mediaUrl.toLowerCase();
+                          const isImage = /\.(png|jpe?g|gif|webp|bmp)/i.test(lowerUrl) || lowerUrl.includes('image');
+                          const isPdf = /\.pdf/i.test(lowerUrl) || lowerUrl.includes('pdf');
+
+                          if (isPdf) return null;
+
+                          return (
+                            <div className="mb-2 bg-gray-50 text-gray-800 border border-gray-200 rounded p-2 max-w-[280px]">
+                              {isImage ? (
+                                <img
+                                  src={mediaUrl}
+                                  alt="Attached Image"
+                                  className="w-full h-auto max-h-[180px] object-cover rounded"
+                                />
+                              ) : (
+                                <a
+                                  href={mediaUrl}
+                                  target="_blank"
+                                  rel="noreferrer"
+                                  className="flex items-center gap-2 text-[12px] text-blue-600 dark:text-blue-400 hover:underline font-medium"
+                                >
+                                  <span className="text-base">📄</span>
+                                  <span className="truncate">
+                                    Download Document
+                                  </span>
+                                </a>
+                              )}
+                            </div>
+                          );
+                        })()}
+
                         {/* Media Render */}
                         {isRevoked ? (
                           <span className="italic text-[#8696a0] flex items-center gap-1.5 py-1 select-none pr-6">
@@ -1109,42 +1145,6 @@ export default function InboxPage() {
                                 />
                               );
                           }
-                        })()}
-
-                        {/* Media URL Attachment Preview from Metadata */}
-                        {(() => {
-                          const mediaUrl = m.metadata?.media_url;
-                          if (!mediaUrl) return null;
-
-                          const lowerUrl = mediaUrl.toLowerCase();
-                          const isImage = /\.(png|jpe?g|gif|webp|bmp)/i.test(lowerUrl) || lowerUrl.includes('image');
-                          const isPdf = /\.pdf/i.test(lowerUrl) || lowerUrl.includes('pdf');
-
-                          if (isPdf) return null;
-
-                          return (
-                            <div className="mt-2 bg-gray-50 text-gray-800 border border-gray-200 rounded p-2 max-w-[280px]">
-                              {isImage ? (
-                                <img
-                                  src={mediaUrl}
-                                  alt="Attached Image"
-                                  className="w-full h-auto max-h-[180px] object-cover rounded"
-                                />
-                              ) : (
-                                <a
-                                  href={mediaUrl}
-                                  target="_blank"
-                                  rel="noreferrer"
-                                  className="flex items-center gap-2 text-[12px] text-blue-600 dark:text-blue-400 hover:underline font-medium"
-                                >
-                                  <span className="text-base">📄</span>
-                                  <span className="truncate">
-                                    Download Document
-                                  </span>
-                                </a>
-                              )}
-                            </div>
-                          );
                         })()}
 
                         <div className={`flex items-center gap-1 mt-1.5 ${isOut ? 'justify-end' : 'justify-start'}`}>

@@ -59,3 +59,20 @@ export function generateAvatarColor(name: string): string {
   }
   return colors[Math.abs(hash) % colors.length];
 }
+
+export function normalizePhoneNumber(phone: string): string {
+  if (!phone) return '';
+  // Remove all non-digit characters
+  let cleaned = phone.replace(/\D/g, '');
+  
+  // Remove leading zeroes
+  cleaned = cleaned.replace(/^0+/, '');
+
+  // If it's exactly 10 digits, assume Indian country code '91'
+  if (cleaned.length === 10) {
+    cleaned = '91' + cleaned;
+  }
+
+  return cleaned;
+}
+

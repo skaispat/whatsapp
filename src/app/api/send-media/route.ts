@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from 'next/server';
 import { createAdminClient } from '@/lib/supabase/server';
 import { isCsvFile } from '@/lib/mediaSupport';
 import { uploadWhatsAppMedia, sendWhatsAppMediaMessage } from '@/lib/whatsapp';
+import { normalizePhoneNumber } from '@/lib/utils';
 
 async function convertCsvToXlsx(file: File) {
   // eslint-disable-next-line @typescript-eslint/no-require-imports
@@ -34,6 +35,8 @@ export async function POST(request: NextRequest) {
       );
     }
 
+    const normalizedTo = normalizePhoneNumber(to);
+
     // Resolve credentials + real user_id from whatsapp_portal_configs
     const { data: config } = await supabase
       .from('whatsapp_portal_configs')
@@ -63,7 +66,7 @@ export async function POST(request: NextRequest) {
 
     // 2. Send media message via Meta WhatsApp messages endpoint
     const { messageId: waMessageId } = await sendWhatsAppMediaMessage({
-      to,
+      to: normalizedTo,
       mediaId,
       mediaType: type,
       caption: caption || undefined,

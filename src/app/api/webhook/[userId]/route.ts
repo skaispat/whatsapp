@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { createAdminClient } from "@/lib/supabase/server";
 import { fetchWhatsAppTemplates, resolveTemplateInfo } from "@/lib/whatsapp";
+import { normalizePhoneNumber } from "@/lib/utils";
 
 export async function GET(
   request: NextRequest,
@@ -97,7 +98,7 @@ export async function POST(
     // Handle incoming messages
     if (changes.messages && changes.messages.length > 0) {
       for (const msg of changes.messages) {
-        const phoneNumber = msg.from;
+        const phoneNumber = normalizePhoneNumber(msg.from);
         const profileName = changes.contacts?.[0]?.profile?.name || phoneNumber;
         const waMessageId = msg.id;
         const messageType = msg.type || "text";
@@ -460,7 +461,7 @@ export async function POST(
             const { data: contact, error: contactError } = await supabase
               .from("whatsapp_portal_contacts")
               .upsert(
-                { user_id: userId, phone_number: status.recipient_id },
+                { user_id: userId, phone_number: normalizePhoneNumber(status.recipient_id) },
                 { onConflict: "user_id,phone_number" },
               )
               .select("id")

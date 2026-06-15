@@ -1,18 +1,21 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { createAdminClient } from '@/lib/supabase/server';
 import { sendWhatsAppMessage } from '@/lib/whatsapp';
+import { normalizePhoneNumber } from '@/lib/utils';
 
 export async function POST(request: NextRequest) {
   try {
     const supabase = createAdminClient();
 
-    const { to, message, conversationId, replyToMessageId, replyToMessagePreview } = await request.json();
+    let { to, message, conversationId, replyToMessageId, replyToMessagePreview } = await request.json();
     if (!to || !message) {
       return NextResponse.json(
         { error: 'Missing "to" or "message" field' },
         { status: 400 }
       );
     }
+
+    to = normalizePhoneNumber(to);
 
     // Resolve credentials + real user_id from whatsapp_portal_configs
     const { data: config } = await supabase

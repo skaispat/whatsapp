@@ -1,5 +1,6 @@
 import { NextResponse } from 'next/server';
 import { createClient } from '@supabase/supabase-js';
+import { normalizePhoneNumber } from '@/lib/utils';
 
 export async function POST(req: Request) {
   try {
@@ -97,6 +98,8 @@ export async function POST(req: Request) {
         { status: 400 }
       );
     }
+
+    contactNumber = normalizePhoneNumber(contactNumber);
 
     // Sentiment / Interest detection fallback
     let resolvedInterestStatus = interest_status || null;

@@ -1,13 +1,14 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { createAdminClient } from '@/lib/supabase/server';
 import { sendWhatsAppTemplate, resolveTemplateFinalText } from '@/lib/whatsapp';
+import { normalizePhoneNumber } from '@/lib/utils';
 
 export async function POST(request: NextRequest) {
   try {
     const supabase = createAdminClient();
 
     const body = await request.json();
-    const { to, templateName, languageCode, components, exactText, conversationId } = body;
+    let { to, templateName, languageCode, components, exactText, conversationId } = body;
 
     if (!to || !templateName) {
       return NextResponse.json(
@@ -15,6 +16,8 @@ export async function POST(request: NextRequest) {
         { status: 400 }
       );
     }
+
+    to = normalizePhoneNumber(to);
 
     // Resolve credentials + real user_id from whatsapp_portal_configs
     const { data: config } = await supabase

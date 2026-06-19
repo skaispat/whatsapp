@@ -388,6 +388,8 @@ export async function POST(
           : new Date().toISOString();
 
         const updateData: Record<string, any> = { status: statusValue };
+        let errorCode = 'N/A';
+        let errorMessage = 'N/A';
 
         if (statusValue === "delivered") {
           updateData.delivered_at = timestamp;
@@ -395,11 +397,26 @@ export async function POST(
           updateData.delivered_at = updateData.delivered_at || timestamp;
           updateData.seen_at = timestamp;
         } else if (statusValue === "failed") {
+          errorCode = status.errors?.[0]?.code?.toString() || 'N/A';
+          errorMessage = status.errors?.[0]?.message || status.errors?.[0]?.title || 'N/A';
           console.error(
-            `\n❌ WhatsApp Message Failed Delivery (wamid: ${waMessageId}):`,
-            JSON.stringify(status.errors || status, null, 2),
-            `\n`,
+            `\n❌ WhatsApp Message Failed Delivery (wamid: ${waMessageId}): code=${errorCode}, message=${errorMessage}`,
           );
+
+          // Get the existing message's metadata so we don't overwrite other metadata fields
+          const { data: existingMsg } = await supabase
+            .from("whatsapp_portal_messages")
+            .select("metadata")
+            .eq("wa_message_id", waMessageId)
+            .eq("user_id", userId)
+            .maybeSingle();
+
+          const existingMetadata = existingMsg?.metadata || {};
+          updateData.metadata = {
+            ...existingMetadata,
+            error_code: errorCode,
+            error_message: errorMessage,
+          };
         }
 
         if (status.pricing?.category) {
@@ -442,11 +459,35 @@ export async function POST(
               .eq("user_id", userId)
               .single();
 
-            // Resolve the actual template body text from Meta's API
+            // Resolve the actual template body text by checking local cache first, then Meta API
             let templateContent = "[Template Message]";
             let resolvedTemplateName = templateName || "unknown";
 
-            if (config?.waba_id && config?.access_token) {
+            // 1. Try local cache first
+            if (userId) {
+              const { data: cachedTemplates } = await supabase
+                .from("whatsapp_portal_templates")
+                .select("template_name, body, category")
+                .eq("user_id", userId);
+
+              if (cachedTemplates && cachedTemplates.length > 0) {
+                const pricingCategory = status.pricing?.category; // e.g. "utility", "marketing"
+                const mappedTemplates = cachedTemplates.map((t: any) => ({
+                  name: t.template_name,
+                  category: t.category || '',
+                  body: t.body || ''
+                }));
+                const info = resolveTemplateInfo(mappedTemplates, pricingCategory, templateName);
+                if (info.name !== "unknown" && info.body !== "[Template Message]") {
+                  templateContent = info.body;
+                  resolvedTemplateName = info.name;
+                  console.log(`📋 Resolved template from DB Cache: ${resolvedTemplateName}`);
+                }
+              }
+            }
+
+            // 2. Fallback to Meta API if still unknown or default content
+            if ((resolvedTemplateName === "unknown" || templateContent === "[Template Message]") && config?.waba_id && config?.access_token) {
               const pricingCategory = status.pricing?.category; // e.g. "utility", "marketing"
               console.log(
                 `📋 Fetching templates from Meta (WABA: ${config.waba_id}, category: ${pricingCategory}, hint: ${templateName})...`,
@@ -457,10 +498,11 @@ export async function POST(
               });
               
               const info = resolveTemplateInfo(templates, pricingCategory, templateName);
-              templateContent = info.body;
-              resolvedTemplateName = info.name;
-              
-              console.log(`📋 Resolved template: ${resolvedTemplateName}`);
+              if (info.name !== "unknown" && info.body !== "[Template Message]") {
+                templateContent = info.body;
+                resolvedTemplateName = info.name;
+                console.log(`📋 Resolved template from Meta API: ${resolvedTemplateName}`);
+              }
             }
 
             const { data: contact, error: contactError } = await supabase
@@ -498,7 +540,11 @@ export async function POST(
                   template_name: resolvedTemplateName,
                   status: statusValue,
                   created_at: timestamp,
-                  pricing_category: status.pricing?.category
+                  pricing_category: status.pricing?.category,
+                  metadata: {
+                    error_code: errorCode,
+                    error_message: errorMessage
+                  }
                 };
                 if (statusValue === "delivered")
                   insertData.delivered_at = timestamp;

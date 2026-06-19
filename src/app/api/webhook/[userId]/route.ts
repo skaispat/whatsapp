@@ -51,6 +51,9 @@ export async function POST(
   try {
     const body = await request.json();
 
+    console.log("=== WEBHOOK HIT ===", JSON.stringify(body, null, 2));
+    console.log("=== WEBHOOK USER ID ===", userId);
+
     // 1. Raw Webhook Logger
     try {
       const { data: insertedPayload, error: insertPayloadErr } = await supabase
@@ -416,6 +419,8 @@ export async function POST(
           .eq("user_id", userId)
           .select("id")
           .maybeSingle();
+
+        console.log("Update Attempt:", { updatedRecord, statusUpdateError, waMessageId, userId });
 
         if (statusUpdateError) {
           console.error("❌ Error updating message status:", statusUpdateError);

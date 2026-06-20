@@ -327,7 +327,7 @@ SELECT
 
   CONCAT(
     'TemplateName:',
-    COALESCE(wt.template_name, 'Unknown')
+    COALESCE(wt.template_name, m.template_name, 'Unknown')
   ) AS raw_payload,
 
   GREATEST(

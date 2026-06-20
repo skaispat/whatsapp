@@ -461,33 +461,41 @@ export async function POST(
 
             // Resolve the actual template body text by checking local cache first, then Meta API
             let templateContent = "[Template Message]";
-            let resolvedTemplateName = templateName || "unknown";
+            let resolvedTemplateName = templateName || "Unknown";
+            let resolvedTemplateId: string | null = null;
 
             // 1. Try local cache first
             if (userId) {
               const { data: cachedTemplates } = await supabase
                 .from("whatsapp_portal_templates")
-                .select("template_name, body, category")
+                .select("id, template_name, body, category")
                 .eq("user_id", userId);
 
               if (cachedTemplates && cachedTemplates.length > 0) {
                 const pricingCategory = status.pricing?.category; // e.g. "utility", "marketing"
                 const mappedTemplates = cachedTemplates.map((t: any) => ({
+                  id: t.id,
                   name: t.template_name,
                   category: t.category || '',
                   body: t.body || ''
                 }));
                 const info = resolveTemplateInfo(mappedTemplates, pricingCategory, templateName);
-                if (info.name !== "unknown" && info.body !== "[Template Message]") {
+                if (info.name !== "unknown" && info.name !== "Unknown" && info.body !== "[Template Message]") {
                   templateContent = info.body;
                   resolvedTemplateName = info.name;
+                  const matchedCache = cachedTemplates.find(
+                    (t: any) => t.template_name.toLowerCase() === resolvedTemplateName.toLowerCase()
+                  );
+                  if (matchedCache) {
+                    resolvedTemplateId = matchedCache.id;
+                  }
                   console.log(`📋 Resolved template from DB Cache: ${resolvedTemplateName}`);
                 }
               }
             }
 
-            // 2. Fallback to Meta API if still unknown or default content
-            if ((resolvedTemplateName === "unknown" || templateContent === "[Template Message]") && config?.waba_id && config?.access_token) {
+            // 2. Fallback to Meta API if still Unknown or default content
+            if ((resolvedTemplateName === "unknown" || resolvedTemplateName === "Unknown" || templateContent === "[Template Message]") && config?.waba_id && config?.access_token) {
               const pricingCategory = status.pricing?.category; // e.g. "utility", "marketing"
               console.log(
                 `📋 Fetching templates from Meta (WABA: ${config.waba_id}, category: ${pricingCategory}, hint: ${templateName})...`,
@@ -498,7 +506,7 @@ export async function POST(
               });
               
               const info = resolveTemplateInfo(templates, pricingCategory, templateName);
-              if (info.name !== "unknown" && info.body !== "[Template Message]") {
+              if (info.name !== "unknown" && info.name !== "Unknown" && info.body !== "[Template Message]") {
                 templateContent = info.body;
                 resolvedTemplateName = info.name;
                 console.log(`📋 Resolved template from Meta API: ${resolvedTemplateName}`);
@@ -537,6 +545,7 @@ export async function POST(
                   direction: "outbound",
                   content: templateContent,
                   message_type: "template",
+                  template_id: resolvedTemplateId || null,
                   template_name: resolvedTemplateName,
                   status: statusValue,
                   created_at: timestamp,

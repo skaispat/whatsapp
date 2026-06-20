@@ -29,7 +29,7 @@ export async function POST(request: NextRequest) {
     
     const { data: allTemplates, error: fetchError } = await supabase
       .from('whatsapp_portal_templates')
-      .select('template_name, body, header, footer, buttons')
+      .select('id, template_name, body, header, footer, buttons')
       .eq('user_id', user_id);
 
     if (fetchError) console.error('Error fetching template list:', fetchError);
@@ -44,7 +44,7 @@ export async function POST(request: NextRequest) {
     });
 
     // Find template by matching normalized versions string-to-string
-    const matchedTemplate = (allTemplates || []).find((t: { template_name: string; body?: string | null; header?: string | null; footer?: string | null; buttons?: any[] }) => 
+    const matchedTemplate = (allTemplates || []).find((t: { id: string; template_name: string; body?: string | null; header?: string | null; footer?: string | null; buttons?: any[] }) => 
       t.template_name.toLowerCase().replace(/_/g, '').trim() === targetNormalized
     );
 
@@ -121,6 +121,7 @@ export async function POST(request: NextRequest) {
           wa_message_id: wamid,
           direction: 'outbound',
           message_type: 'template',
+          template_id: matchedTemplate?.id || null,
           template_name, // Saved with correct underscores
           metadata,      // Saved inside nested schema block
           source: 'sheet',

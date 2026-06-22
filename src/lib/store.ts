@@ -144,6 +144,7 @@ export interface DashMessage {
   delivered_at?: string;
   seen_at?: string;
   mime_type?: string;
+  template_name?: string;
   context_message_id?: string;
   buttons?: any[];
   metadata?: {

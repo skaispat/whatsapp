@@ -890,7 +890,7 @@ export default function InboxPage() {
 
                           let mediaUrl = m.media_url || m.metadata?.media_url || '';
                           let fileName = m.file_name || m.metadata?.file_name || getFileName(mediaUrl);
-                          let isTemplateMedia = m.message_type === 'template' || !!m.template_name;
+                          let isTemplateMedia = m.message_type === 'template' || !!m.template_name || m.source === 'sheet' || !!m.metadata?.parameters;
 
                           if (!mediaUrl) {
                             const mediaObj = m.media && Array.isArray(m.media) && m.media.length > 0 ? m.media[0] : null;
@@ -1059,10 +1059,16 @@ export default function InboxPage() {
                               );
                             case 'document': {
                               const fileName = m.file_name || mediaObj?.fileName || 'Document';
-                              const isPdf = fileName.toLowerCase().endsWith('.pdf') || fileSrc.toLowerCase().endsWith('.pdf') || fileSrc.toLowerCase().includes('pdf');
-                              const isDocFormat = fileName.match(/\.(doc|docx|xls|xlsx)($|\?)/i) || fileSrc.match(/\.(doc|docx|xls|xlsx)($|\?)/i);
                               
-                              if (isPdf || isDocFormat) {
+                              // If this document is already rendered in the top header frame, bypass the duplicate card.
+                              const hasTopHeader = 
+                                fileSrc.toLowerCase().includes('.pdf') ||
+                                fileSrc.toLowerCase().includes('drive.google.com') ||
+                                m.message_type === 'document' ||
+                                m.mime_type === 'application/pdf' ||
+                                !!m.file_name?.toLowerCase().endsWith('.pdf');
+
+                              if (hasTopHeader) {
                                 return m.content && m.content !== '[Document]' ? (
                                   <WhatsAppMessageText text={m.content} className="mt-1" />
                                 ) : null;

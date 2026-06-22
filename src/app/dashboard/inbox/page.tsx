@@ -872,140 +872,101 @@ export default function InboxPage() {
                           );
                         })()}
 
-                        {/* PDF Link Preview at the Top */}
+                        {/* Native WhatsApp Style Media Header Frame */}
                         {(() => {
                           if (isRevoked) return null;
-                          const getFileNameFromUrl = (url: string) => {
+
+                          // Helper to extract a clean filename from url
+                          const getFileName = (url: string) => {
+                            if (!url) return "Document.pdf";
                             try {
                               const decoded = decodeURIComponent(url);
                               const pathname = new URL(decoded).pathname;
-                              const name = pathname.substring(pathname.lastIndexOf('/') + 1);
-                              return name || 'document.pdf';
-                            } catch {
+                              const base = pathname.substring(pathname.lastIndexOf('/') + 1);
+                              return base || "Document.pdf";
+                            } catch(e) {
                               const lastPart = url.substring(url.lastIndexOf('/') + 1);
-                              return lastPart.split('?')[0] || 'document.pdf';
+                              return lastPart.split('?')[0] || "Document.pdf";
                             }
                           };
 
-                          let pdfUrl = '';
-                          let pdfName = '';
+                          let mediaUrl = '';
+                          let fileName = '';
+                          let isTemplateMedia = false;
 
                           if (m.metadata?.media_url) {
-                            const url = m.metadata.media_url;
-                            if (url.toLowerCase().endsWith('.pdf') || url.toLowerCase().includes('pdf')) {
-                              pdfUrl = url;
-                              pdfName = m.metadata.file_name || getFileNameFromUrl(url);
-                            }
+                            mediaUrl = m.metadata.media_url;
+                            fileName = m.metadata.file_name || getFileName(mediaUrl);
+                            isTemplateMedia = true;
                           }
 
-                          if (!pdfUrl) {
+                          if (!mediaUrl) {
                             const mediaObj = m.media && Array.isArray(m.media) && m.media.length > 0 ? m.media[0] : null;
                             const mediaId = mediaObj?.id || m.media_url;
                             if (mediaId && m.message_type === 'document') {
-                              const url = mediaId.startsWith('http') ? mediaId : `/api/media/${mediaId}`;
-                              const name = m.file_name || mediaObj?.fileName || 'Document';
-                              if (name.toLowerCase().endsWith('.pdf') || url.toLowerCase().endsWith('.pdf') || url.toLowerCase().includes('pdf')) {
-                                pdfUrl = url;
-                                pdfName = name;
-                              }
+                              mediaUrl = mediaId.startsWith('http') ? mediaId : `/api/media/${mediaId}`;
+                              fileName = m.file_name || mediaObj?.fileName || 'Document';
                             }
                           }
 
-                          if (!pdfUrl) return null;
-
-                          const timeStr = new Date(m.created_at).toLocaleTimeString('en-IN', { hour: '2-digit', minute: '2-digit' });
-
-                          return (
-                            <div
-                              className={`
-                                flex flex-col rounded-[6px] overflow-hidden text-left mb-2.5 transition-all select-none border border-[var(--color-wa-border)] bg-black/5
-                              `}
-                            >
-                              {/* Top row with PDF icon, filename, and timestamp */}
-                              <div className="flex items-center gap-2.5 p-2 min-h-[44px]">
-                                {/* PDF Badge */}
-                                <div className="bg-[#EF4444] text-white text-[9px] font-extrabold px-1.5 py-1 rounded shrink-0 flex items-center justify-center h-8 w-8 select-none shadow-sm">
-                                  PDF
-                                </div>
-                                <div className="flex-1 min-w-0 text-[13px] font-medium text-[var(--color-wa-text)] truncate pr-1">
-                                  {pdfName}
-                                </div>
-                                <div className="text-[10px] text-[var(--color-wa-muted)] shrink-0 pr-1">
-                                  {timeStr}
-                                </div>
-                              </div>
-                              
-                              {/* Action buttons row */}
-                              <div className="flex items-center gap-4 px-3 pb-2 pt-1.5 text-xs font-semibold select-none border-t border-[var(--color-wa-border)]/30">
-                                {!downloadedMedia[m.id] ? (
-                                  <button
-                                    onClick={() => handleDownloadMedia(pdfUrl, pdfName, m.id)}
-                                    className="text-[#25D366] hover:underline cursor-pointer flex items-center gap-1"
-                                  >
-                                    <Download size={14} /> Download
-                                  </button>
-                                ) : (
-                                  <>
-                                    <a
-                                      href={pdfUrl}
-                                      target="_blank"
-                                      rel="noreferrer"
-                                      className="text-[#25D366] hover:underline cursor-pointer"
-                                    >
-                                      Open
-                                    </a>
-                                    <a
-                                      href={pdfUrl}
-                                      download={pdfName}
-                                      target="_blank"
-                                      rel="noreferrer"
-                                      className="text-[#25D366] hover:underline cursor-pointer"
-                                    >
-                                      Save as...
-                                    </a>
-                                  </>
-                                )}
-                              </div>
-                            </div>
-                          );
-                        })()}
-
-                        {/* Media URL Attachment Preview from Metadata */}
-                        {(() => {
-                          if (isRevoked) return null;
-                          const mediaUrl = m.metadata?.media_url;
                           if (!mediaUrl) return null;
 
-                          const lowerUrl = mediaUrl.toLowerCase();
-                          const isImage = /\.(png|jpe?g|gif|webp|bmp)/i.test(lowerUrl) || lowerUrl.includes('image');
-                          const isPdf = /\.pdf/i.test(lowerUrl) || lowerUrl.includes('pdf');
+                          const isImage = (mediaUrl.match(/\.(jpg|jpeg|png|webp|gif)($|\?)/i) || m.metadata?.attachment_type === 'image') && isTemplateMedia;
+                          const isDocument = mediaUrl.match(/\.(pdf|doc|docx|xls|xlsx)($|\?)/i) || m.metadata?.attachment_type === 'pdf' || mediaUrl.toLowerCase().endsWith('.pdf') || m.message_type === 'document';
 
-                          if (isPdf) return null;
-
-                          return (
-                            <div className="mb-2 bg-gray-50 text-gray-800 border border-gray-200 rounded p-2 max-w-[280px]">
-                              {isImage ? (
-                                <img
-                                  src={mediaUrl}
-                                  alt="Attached Image"
-                                  className="w-full h-auto max-h-[180px] object-cover rounded"
+                          if (isImage) {
+                            return (
+                              <div className={`w-[calc(100%+24px)] mb-2 overflow-hidden -mx-3 -mt-2 select-none ${
+                                isOut ? 'rounded-tl-[8px] rounded-tr-none' : 'rounded-tl-none rounded-tr-[8px]'
+                              }`}>
+                                <img 
+                                  src={mediaUrl} 
+                                  alt="Broadcast Graphic Preview" 
+                                  className="w-full h-auto max-h-[300px] object-cover cursor-pointer hover:opacity-95 transition-opacity"
+                                  onClick={() => {
+                                    setViewerMessage(m);
+                                    setZoomScale(1);
+                                  }}
                                 />
-                              ) : (
-                                <a
-                                  href={mediaUrl}
-                                  target="_blank"
-                                  rel="noreferrer"
-                                  className="flex items-center gap-2 text-[12px] text-blue-600 dark:text-blue-400 hover:underline font-medium"
+                              </div>
+                            );
+                          }
+
+                          if (isDocument) {
+                            return (
+                              <div className={`w-[calc(100%+24px)] mb-2 bg-black/20 hover:bg-black/30 transition-colors p-3 flex items-center justify-between -mx-3 -mt-2 border-b border-black/5 text-white ${
+                                isOut ? 'rounded-tl-[8px] rounded-tr-none' : 'rounded-tl-none rounded-tr-[8px]'
+                              }`}>
+                                <div className="flex items-center space-x-3 overflow-hidden pr-2">
+                                  <svg className="w-6 h-6 shrink-0 text-gray-200" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
+                                  </svg>
+                                  <div className="flex flex-col truncate text-left">
+                                    <span className="text-sm font-medium truncate tracking-wide text-gray-100">
+                                      {fileName}
+                                    </span>
+                                    <span className="text-xs text-gray-300 font-light mt-0.5">
+                                      PDF Document
+                                    </span>
+                                  </div>
+                                </div>
+                                
+                                <button 
+                                  onClick={() => handleDownloadMedia(mediaUrl, fileName, m.id)}
+                                  className="p-1.5 rounded-full hover:bg-white/10 text-gray-200 cursor-pointer"
+                                  title="Download Document"
                                 >
-                                  <span className="text-base">📄</span>
-                                  <span className="truncate">
-                                    Download Document
-                                  </span>
-                                </a>
-                              )}
-                            </div>
-                          );
+                                  <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4" />
+                                  </svg>
+                                </button>
+                              </div>
+                            );
+                          }
+
+                          return null;
                         })()}
+
 
                         {/* Media Render */}
                         {isRevoked ? (
@@ -1096,8 +1057,9 @@ export default function InboxPage() {
                             case 'document': {
                               const fileName = m.file_name || mediaObj?.fileName || 'Document';
                               const isPdf = fileName.toLowerCase().endsWith('.pdf') || fileSrc.toLowerCase().endsWith('.pdf') || fileSrc.toLowerCase().includes('pdf');
+                              const isDocFormat = fileName.match(/\.(doc|docx|xls|xlsx)($|\?)/i) || fileSrc.match(/\.(doc|docx|xls|xlsx)($|\?)/i);
                               
-                              if (isPdf) {
+                              if (isPdf || isDocFormat) {
                                 return m.content && m.content !== '[Document]' ? (
                                   <WhatsAppMessageText text={m.content} className="mt-1" />
                                 ) : null;

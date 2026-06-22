@@ -7,7 +7,10 @@ export async function POST(request: NextRequest) {
     console.log("🚨 RAW INCOMING PAYLOAD FROM SHEET:", JSON.stringify(body, null, 2));
     
     let { user_id, wamid, phone, template_name, parameters, media_url } = body;
+    console.log("🔍 Media URL check:", media_url);
     const resolvedMediaUrl = media_url || "";
+    const isImage = resolvedMediaUrl ? (/\.(jpg|jpeg|png|webp|gif)($|\?)/i.test(resolvedMediaUrl) || resolvedMediaUrl.includes("image")) : false;
+    const messageType = resolvedMediaUrl ? (isImage ? 'image' : 'document') : 'template';
 
     // Normalize phone number to prevent duplicate contacts
     if (phone) {
@@ -200,7 +203,7 @@ export async function POST(request: NextRequest) {
         user_id,
         conversation_id: conversation.id,
         direction: 'outbound',
-        message_type: 'template',
+        message_type: messageType,
         template_id: matchedTemplate?.id || null,
         template_name,
         media_url: resolvedMediaUrl || null,
@@ -230,7 +233,7 @@ export async function POST(request: NextRequest) {
         conversation_id: conversation.id,
         wa_message_id: wamid,
         direction: 'outbound',
-        message_type: 'template',
+        message_type: messageType,
         template_id: matchedTemplate?.id || null,
         template_name,
         media_url: resolvedMediaUrl || null,
@@ -266,7 +269,7 @@ export async function POST(request: NextRequest) {
           user_id,
           conversation_id: conversation.id,
           direction: 'outbound',
-          message_type: 'template',
+          message_type: messageType,
           template_id: matchedTemplate?.id || null,
           template_name,
           media_url: resolvedMediaUrl || null,

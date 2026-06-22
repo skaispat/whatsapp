@@ -881,12 +881,10 @@ export default function InboxPage() {
                             if (!url) return "Document.pdf";
                             try {
                               const decoded = decodeURIComponent(url);
-                              const pathname = new URL(decoded).pathname;
-                              const base = pathname.substring(pathname.lastIndexOf('/') + 1);
-                              return base || "Document.pdf";
+                              const base = decoded.split('/').pop()?.split('?')[0];
+                              return base && base.includes('.') ? base : "Document.pdf";
                             } catch(e) {
-                              const lastPart = url.substring(url.lastIndexOf('/') + 1);
-                              return lastPart.split('?')[0] || "Document.pdf";
+                              return "Document.pdf";
                             }
                           };
 
@@ -919,7 +917,7 @@ export default function InboxPage() {
                             (mediaUrlLower.includes("drive.google.com") && !isImage) ||
                             m.message_type === "document" ||
                             m.mime_type === "application/pdf" ||
-                            !!mediaUrlLower.match(/\.(pdf|doc|docx|xls|xlsx)($|\?)/i);
+                            !!m.file_name?.toLowerCase().endsWith('.pdf');
 
                           if (isImage) {
                             return (

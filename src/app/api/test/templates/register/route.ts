@@ -90,12 +90,71 @@ export async function POST(request: NextRequest) {
     }
 
     // 2. Resolve Contact
-    const { data: contact, error: contactError } = await supabase
+    // Fetch existing contact name first to protect it from being overwritten by raw phone numbers
+    const { data: existingContact, error: fetchContactError } = await supabase
       .from('whatsapp_portal_contacts')
-      .upsert({ user_id, phone_number: phone, name: phone, profile_name: phone }, { onConflict: 'user_id,phone_number' })
-      .select('id').single();
+      .select('id, name, profile_name')
+      .eq('user_id', user_id)
+      .eq('phone_number', phone)
+      .maybeSingle();
 
-    if (contactError || !contact) return NextResponse.json({ success: false, error: 'Contact error' }, { status: 500 });
+    if (fetchContactError) {
+      console.error('Error fetching existing contact:', fetchContactError);
+    }
+
+    let contactId = existingContact?.id;
+    let contactError = null;
+
+    if (existingContact) {
+      // Check if existing row has non-empty name or profile_name
+      const needsNameUpdate = !existingContact.name || existingContact.name.trim() === '';
+      const needsProfileUpdate = !existingContact.profile_name || existingContact.profile_name.trim() === '';
+
+      if (needsNameUpdate || needsProfileUpdate) {
+        const updatePayload: Record<string, any> = {};
+        if (needsNameUpdate) updatePayload.name = phone;
+        if (needsProfileUpdate) updatePayload.profile_name = phone;
+
+        const { error: updateErr } = await supabase
+          .from('whatsapp_portal_contacts')
+          .update(updatePayload)
+          .eq('id', contactId);
+        
+        contactError = updateErr;
+      }
+    } else {
+      // Contact is completely new; insert it
+      const { data: newContact, error: insertContactErr } = await supabase
+        .from('whatsapp_portal_contacts')
+        .insert({
+          user_id,
+          phone_number: phone,
+          name: phone,
+          profile_name: phone
+        })
+        .select('id')
+        .maybeSingle();
+
+      if (insertContactErr) {
+        if (insertContactErr.code === '23505') {
+          // Handle concurrent insert write conflict fallback
+          const { data: refetchedContact } = await supabase
+            .from('whatsapp_portal_contacts')
+            .select('id')
+            .eq('user_id', user_id)
+            .eq('phone_number', phone)
+            .maybeSingle();
+          contactId = refetchedContact?.id;
+        } else {
+          contactError = insertContactErr;
+        }
+      } else {
+        contactId = newContact?.id;
+      }
+    }
+
+    if (contactError || !contactId) return NextResponse.json({ success: false, error: 'Contact error' }, { status: 500 });
+    const contact = { id: contactId };
 
     // 3. Resolve Conversation
     const { data: conversation, error: convError } = await supabase

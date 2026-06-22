@@ -55,7 +55,7 @@ USING btree (user_id)
 TABLESPACE pg_default;
 
 
-create view public.whatsapp_portal_debug_inbox_messages as
+create or replace view public.whatsapp_portal_debug_inbox_messages as
 select
   m.id,
   m.content,
@@ -64,7 +64,7 @@ select
   m.created_at,
   c.id as conversation_id,
   ct.phone_number,
-  ct.name
+  COALESCE(ct.name, ct.profile_name, ct.phone_number) as name
 from
   whatsapp_portal_messages m
   left join whatsapp_portal_conversations c on m.conversation_id = c.id
@@ -266,7 +266,7 @@ SELECT
   m.created_at,
   c.id AS conversation_id,
   ct.phone_number,
-  ct.name
+  COALESCE(ct.name, ct.profile_name, ct.phone_number) AS name
 FROM public.whatsapp_portal_messages m
 LEFT JOIN public.whatsapp_portal_conversations c
   ON m.conversation_id = c.id
@@ -288,7 +288,7 @@ SELECT
   m.wa_message_id AS message_id,
 
   c.phone_number AS from_number,
-  COALESCE(c.name, c.profile_name) AS from_name,
+  COALESCE(c.name, c.profile_name, c.phone_number) AS from_name,
 
   wc.phone_number_id AS to_number,
 

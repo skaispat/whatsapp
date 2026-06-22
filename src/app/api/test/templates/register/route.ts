@@ -105,31 +105,132 @@ export async function POST(request: NextRequest) {
 
     if (convError || !conversation) return NextResponse.json({ success: false, error: 'Conversation error' }, { status: 500 });
 
-    // 4. Upsert Message with PERFECT metadata column nesting alignment!
-    const metadata = {
+    // 4. Resolve and merge Message with status protection & error metadata preservation!
+    const incomingMetadata = {
       parameters: cleanTrackingVars || [],
       media_url: resolvedMediaUrl,
       buttons: matchedTemplate?.buttons || []
-    }; // 👈 Fixes the store.ts dynamic lookup pass!
+    };
 
-    const { data: message, error: msgError } = await supabase
+    // Check if message already exists
+    const { data: existingMsg, error: fetchMsgError } = await supabase
       .from('whatsapp_portal_messages')
-      .upsert(
-        {
+      .select('status, metadata')
+      .eq('wa_message_id', wamid)
+      .maybeSingle();
+
+    if (fetchMsgError) {
+      console.error('Error fetching existing message for status protection:', fetchMsgError);
+    }
+
+    const protectedStatuses = ['failed', 'delivered', 'read'];
+    const hasProtectedStatus = existingMsg && protectedStatuses.includes(existingMsg.status || '');
+
+    // Deep merge metadata to preserve existing fields like error_code, error_message
+    const finalMetadata = {
+      ...(existingMsg?.metadata || {}),
+      ...incomingMetadata
+    };
+
+    let message;
+    let msgError;
+
+    if (existingMsg) {
+      // Perform status-protected UPDATE
+      const updatePayload: Record<string, any> = {
+        user_id,
+        conversation_id: conversation.id,
+        direction: 'outbound',
+        message_type: 'template',
+        template_id: matchedTemplate?.id || null,
+        template_name,
+        metadata: finalMetadata,
+        source: 'sheet',
+        content: finalContent,
+      };
+
+      // Do not overwrite status if it's protected
+      if (!hasProtectedStatus) {
+        updatePayload.status = 'sent';
+      }
+
+      const { data: updatedMsg, error: updateErr } = await supabase
+        .from('whatsapp_portal_messages')
+        .update(updatePayload)
+        .eq('wa_message_id', wamid)
+        .select('*')
+        .maybeSingle();
+
+      message = updatedMsg;
+      msgError = updateErr;
+    } else {
+      // Perform INSERT
+      const insertPayload: Record<string, any> = {
+        user_id,
+        conversation_id: conversation.id,
+        wa_message_id: wamid,
+        direction: 'outbound',
+        message_type: 'template',
+        template_id: matchedTemplate?.id || null,
+        template_name,
+        metadata: finalMetadata,
+        source: 'sheet',
+        content: finalContent,
+        status: 'sent',
+      };
+
+      const { data: insertedMsg, error: insertErr } = await supabase
+        .from('whatsapp_portal_messages')
+        .insert(insertPayload)
+        .select('*')
+        .maybeSingle();
+
+      if (insertErr && insertErr.code === '23505') {
+        // Fallback update in case of concurrent write race condition
+        console.warn('⚠️ Race condition detected during message insert. Retrying as update.');
+        const { data: refetchedMsg } = await supabase
+          .from('whatsapp_portal_messages')
+          .select('status, metadata')
+          .eq('wa_message_id', wamid)
+          .maybeSingle();
+
+        const latestMetadata = {
+          ...(refetchedMsg?.metadata || {}),
+          ...incomingMetadata
+        };
+
+        const latestHasProtectedStatus = refetchedMsg && protectedStatuses.includes(refetchedMsg.status || '');
+
+        const fallbackPayload: Record<string, any> = {
           user_id,
           conversation_id: conversation.id,
-          wa_message_id: wamid,
           direction: 'outbound',
           message_type: 'template',
           template_id: matchedTemplate?.id || null,
-          template_name, // Saved with correct underscores
-          metadata,      // Saved inside nested schema block
+          template_name,
+          metadata: latestMetadata,
           source: 'sheet',
           content: finalContent,
-        },
-        { onConflict: 'wa_message_id' }
-      )
-      .select('*').single();
+        };
+
+        if (!latestHasProtectedStatus) {
+          fallbackPayload.status = 'sent';
+        }
+
+        const { data: updatedMsg, error: updateErr } = await supabase
+          .from('whatsapp_portal_messages')
+          .update(fallbackPayload)
+          .eq('wa_message_id', wamid)
+          .select('*')
+          .maybeSingle();
+
+        message = updatedMsg;
+        msgError = updateErr;
+      } else {
+        message = insertedMsg;
+        msgError = insertErr;
+      }
+    }
 
     if (msgError) return NextResponse.json({ success: false, error: msgError.message }, { status: 500 });
 

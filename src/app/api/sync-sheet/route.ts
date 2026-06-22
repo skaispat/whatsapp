@@ -187,35 +187,162 @@ export async function POST(req: Request) {
       conversationId = newConv?.id;
     }
 
-    // 3. Upsert Message (with user_id to match webhook/portal schema)
-    const msgData: any = {
-      user_id: userId,
-      conversation_id: conversationId,
-      wa_message_id: message_id,
-      direction: direction,
-      content: content,
-      message_type: message_type || 'text',
-      status: status || 'sent',
-      created_at: timestamp,
-      interactive_type: interactive_type || null,
-      interactive_id: interactive_id || null,
-      interactive_title: interactive_title || null,
-      context_message_id: context_message_id || null,
-      interest_status: resolvedInterestStatus,
-    };
+    // 3. Resolve and merge Message with status protection & error metadata preservation!
+    // Fetch the existing message by wa_message_id
+    const { data: existingMsg, error: fetchMsgError } = await supabase
+      .from('whatsapp_portal_messages')
+      .select('status, metadata')
+      .eq('wa_message_id', message_id)
+      .maybeSingle();
 
-    if (status === 'delivered') msgData.delivered_at = timestamp;
-    if (status === 'read') {
-      msgData.delivered_at = timestamp;
-      msgData.seen_at = timestamp;
+    if (fetchMsgError) {
+      console.error('Error fetching existing message for status protection:', fetchMsgError);
     }
 
-    const { error: msgError } = await supabase
-      .from('whatsapp_portal_messages')
-      .upsert(msgData, { onConflict: 'wa_message_id' });
+    const protectedStatuses = ['failed', 'delivered', 'read'];
+    const hasProtectedStatus = existingMsg && protectedStatuses.includes(existingMsg.status || '');
+
+    // Parse incoming metadata from raw_payload_template if available
+    let incomingMetadata: Record<string, any> = {};
+    if (raw_payload_template) {
+      try {
+        incomingMetadata = typeof raw_payload_template === 'string' 
+          ? JSON.parse(raw_payload_template) 
+          : raw_payload_template;
+      } catch (e) {
+        incomingMetadata = { raw_payload: raw_payload_template };
+      }
+    }
+
+    // Deep merge metadata to preserve existing fields like error_code, error_message
+    const finalMetadata = {
+      ...(existingMsg?.metadata || {}),
+      ...incomingMetadata
+    };
+
+    let msgError;
+
+    if (existingMsg) {
+      // Perform status-protected UPDATE
+      const updateData: Record<string, any> = {
+        user_id: userId,
+        conversation_id: conversationId,
+        direction: direction,
+        content: content,
+        message_type: message_type || 'text',
+        created_at: timestamp,
+        interactive_type: interactive_type || null,
+        interactive_id: interactive_id || null,
+        interactive_title: interactive_title || null,
+        context_message_id: context_message_id || null,
+        interest_status: resolvedInterestStatus,
+        metadata: finalMetadata,
+      };
+
+      // Keep the current protected status, otherwise update
+      if (hasProtectedStatus) {
+        updateData.status = existingMsg.status;
+      } else {
+        updateData.status = status || 'sent';
+      }
+
+      if (updateData.status === 'delivered') updateData.delivered_at = timestamp;
+      if (updateData.status === 'read') {
+        updateData.delivered_at = timestamp;
+        updateData.seen_at = timestamp;
+      }
+
+      const { error: updateErr } = await supabase
+        .from('whatsapp_portal_messages')
+        .update(updateData)
+        .eq('wa_message_id', message_id);
+
+      msgError = updateErr;
+    } else {
+      // Perform INSERT
+      const insertData: Record<string, any> = {
+        user_id: userId,
+        conversation_id: conversationId,
+        wa_message_id: message_id,
+        direction: direction,
+        content: content,
+        message_type: message_type || 'text',
+        status: status || 'sent',
+        created_at: timestamp,
+        interactive_type: interactive_type || null,
+        interactive_id: interactive_id || null,
+        interactive_title: interactive_title || null,
+        context_message_id: context_message_id || null,
+        interest_status: resolvedInterestStatus,
+        metadata: finalMetadata,
+      };
+
+      if (insertData.status === 'delivered') insertData.delivered_at = timestamp;
+      if (insertData.status === 'read') {
+        insertData.delivered_at = timestamp;
+        insertData.seen_at = timestamp;
+      }
+
+      const { error: insertErr } = await supabase
+        .from('whatsapp_portal_messages')
+        .insert(insertData);
+
+      if (insertErr && insertErr.code === '23505') {
+        // Fallback update in case of concurrent write race condition
+        console.warn('⚠️ Race condition detected during message insert in sync-sheet. Retrying as update.');
+        const { data: refetchedMsg } = await supabase
+          .from('whatsapp_portal_messages')
+          .select('status, metadata')
+          .eq('wa_message_id', message_id)
+          .maybeSingle();
+
+        const latestMetadata = {
+          ...(refetchedMsg?.metadata || {}),
+          ...incomingMetadata
+        };
+
+        const latestHasProtectedStatus = refetchedMsg && protectedStatuses.includes(refetchedMsg.status || '');
+
+        const fallbackData: Record<string, any> = {
+          user_id: userId,
+          conversation_id: conversationId,
+          direction: direction,
+          content: content,
+          message_type: message_type || 'text',
+          created_at: timestamp,
+          interactive_type: interactive_type || null,
+          interactive_id: interactive_id || null,
+          interactive_title: interactive_title || null,
+          context_message_id: context_message_id || null,
+          interest_status: resolvedInterestStatus,
+          metadata: latestMetadata,
+        };
+
+        if (latestHasProtectedStatus) {
+          fallbackData.status = refetchedMsg.status;
+        } else {
+          fallbackData.status = status || 'sent';
+        }
+
+        if (fallbackData.status === 'delivered') fallbackData.delivered_at = timestamp;
+        if (fallbackData.status === 'read') {
+          fallbackData.delivered_at = timestamp;
+          fallbackData.seen_at = timestamp;
+        }
+
+        const { error: updateErr } = await supabase
+          .from('whatsapp_portal_messages')
+          .update(fallbackData)
+          .eq('wa_message_id', message_id);
+
+        msgError = updateErr;
+      } else {
+        msgError = insertErr;
+      }
+    }
 
     if (msgError) {
-      console.error('Supabase upsert error:', msgError);
+      console.error('Supabase save error:', msgError);
       return NextResponse.json(
         { success: false, error: msgError.message },
         { status: 500 }

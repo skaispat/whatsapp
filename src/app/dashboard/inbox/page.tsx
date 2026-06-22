@@ -890,15 +890,9 @@ export default function InboxPage() {
                             }
                           };
 
-                          let mediaUrl = '';
-                          let fileName = '';
-                          let isTemplateMedia = false;
-
-                          if (m.metadata?.media_url) {
-                            mediaUrl = m.metadata.media_url;
-                            fileName = m.metadata.file_name || getFileName(mediaUrl);
-                            isTemplateMedia = true;
-                          }
+                          let mediaUrl = m.media_url || m.metadata?.media_url || '';
+                          let fileName = m.file_name || m.metadata?.file_name || getFileName(mediaUrl);
+                          let isTemplateMedia = m.message_type === 'template' || !!m.template_name;
 
                           if (!mediaUrl) {
                             const mediaObj = m.media && Array.isArray(m.media) && m.media.length > 0 ? m.media[0] : null;
@@ -911,8 +905,21 @@ export default function InboxPage() {
 
                           if (!mediaUrl) return null;
 
-                          const isImage = (mediaUrl.match(/\.(jpg|jpeg|png|webp|gif)($|\?)/i) || m.metadata?.attachment_type === 'image') && isTemplateMedia;
-                          const isDocument = mediaUrl.match(/\.(pdf|doc|docx|xls|xlsx)($|\?)/i) || m.metadata?.attachment_type === 'pdf' || mediaUrl.toLowerCase().endsWith('.pdf') || m.message_type === 'document';
+                          const mediaUrlLower = mediaUrl.toLowerCase();
+
+                          const isImage = 
+                            ((mediaUrlLower.match(/\.(jpg|jpeg|png|webp|gif)($|\?)/i) || 
+                              mediaUrlLower.includes("image") ||
+                              m.message_type === "image" ||
+                              m.mime_type?.startsWith("image/")) && 
+                             isTemplateMedia);
+
+                          const isDocument = 
+                            mediaUrlLower.includes(".pdf") || 
+                            (mediaUrlLower.includes("drive.google.com") && !isImage) ||
+                            m.message_type === "document" ||
+                            m.mime_type === "application/pdf" ||
+                            !!mediaUrlLower.match(/\.(pdf|doc|docx|xls|xlsx)($|\?)/i);
 
                           if (isImage) {
                             return (

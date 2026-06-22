@@ -143,6 +143,7 @@ export interface DashMessage {
   myReaction?: string;
   delivered_at?: string;
   seen_at?: string;
+  mime_type?: string;
   context_message_id?: string;
   buttons?: any[];
   metadata?: {
@@ -353,6 +354,7 @@ export const useDashStore = create<DashStore>((set, get) => ({
           media_url: log.media_url || log.metadata?.media_url || '',
           file_name: log.file_name,
           file_size: log.file_size,
+          mime_type: log.mime_type,
           context_message_id: log.context_message_id,
           buttons: log.buttons || log.metadata?.buttons,
           metadata: {
@@ -395,6 +397,7 @@ export const useDashStore = create<DashStore>((set, get) => ({
           media_url: log.media_url || log.metadata?.media_url || '',
           file_name: log.file_name,
           file_size: log.file_size,
+          mime_type: log.mime_type,
           context_message_id: log.context_message_id,
           buttons: log.buttons || log.metadata?.buttons,
           metadata: {
@@ -434,6 +437,7 @@ export const useDashStore = create<DashStore>((set, get) => ({
               delivered_at: msg.delivered_at,
               seen_at: msg.seen_at,
               media_url: msg.media_url || existing.media_url || "",
+              mime_type: msg.mime_type || existing.mime_type,
               context_message_id: msg.context_message_id || existing.context_message_id,
               metadata: {
                 ...existing.metadata,
@@ -505,6 +509,7 @@ export const useDashStore = create<DashStore>((set, get) => ({
         media_url: log.media_url || log.metadata?.media_url || '',
         file_name: log.file_name,
         file_size: log.file_size,
+        mime_type: log.mime_type,
         context_message_id: log.context_message_id,
         buttons: log.buttons || log.metadata?.buttons,
         metadata: {
@@ -552,6 +557,7 @@ export const useDashStore = create<DashStore>((set, get) => ({
         media_url: data.media_url || data.metadata?.media_url || '',
         file_name: data.file_name,
         file_size: data.file_size,
+        mime_type: data.mime_type,
         context_message_id: data.context_message_id,
         buttons: data.buttons || data.metadata?.buttons,
         metadata: {

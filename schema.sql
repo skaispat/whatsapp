@@ -64,7 +64,11 @@ select
   m.created_at,
   c.id as conversation_id,
   ct.phone_number,
-  COALESCE(ct.name, ct.profile_name, ct.phone_number) as name
+  COALESCE(ct.name, ct.profile_name, ct.phone_number) as name,
+  m.media_url,
+  m.message_type,
+  m.mime_type,
+  m.metadata
 from
   whatsapp_portal_messages m
   left join whatsapp_portal_conversations c on m.conversation_id = c.id
@@ -266,7 +270,11 @@ SELECT
   m.created_at,
   c.id AS conversation_id,
   ct.phone_number,
-  COALESCE(ct.name, ct.profile_name, ct.phone_number) AS name
+  COALESCE(ct.name, ct.profile_name, ct.phone_number) AS name,
+  m.media_url,
+  m.message_type,
+  m.mime_type,
+  m.metadata
 FROM public.whatsapp_portal_messages m
 LEFT JOIN public.whatsapp_portal_conversations c
   ON m.conversation_id = c.id

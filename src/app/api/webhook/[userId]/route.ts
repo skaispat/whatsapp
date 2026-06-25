@@ -361,16 +361,35 @@ export async function POST(
         if (fileSize) insertData.file_size = fileSize;
         if (mediaArray.length > 0) insertData.media = mediaArray;
 
-        // Insert message
-        const { error: msgInsertError } = await supabase
-          .from("whatsapp_portal_messages")
-          .insert(insertData);
+        // Insert message with deduplication check
+        let msgInsertError = null;
+        if (waMessageId) {
+          const { data: existingMsg } = await supabase
+            .from("whatsapp_portal_messages")
+            .select("id")
+            .eq("wa_message_id", waMessageId)
+            .maybeSingle();
+
+          if (existingMsg) {
+            console.log(`⚠️ Message with wamid ${waMessageId} already exists. Skipping insertion.`);
+          } else {
+            const { error } = await supabase
+              .from("whatsapp_portal_messages")
+              .insert(insertData);
+            msgInsertError = error;
+          }
+        } else {
+          const { error } = await supabase
+            .from("whatsapp_portal_messages")
+            .insert(insertData);
+          msgInsertError = error;
+        }
 
         if (msgInsertError) {
           console.error("❌ Error inserting incoming message:", msgInsertError);
-        } else {
+        } else if (waMessageId) {
           console.log(
-            `✅ Success: ${messageType} message inserted for user ${userId} (wamid: ${waMessageId})`,
+            `✅ Success: ${messageType} message processed for user ${userId} (wamid: ${waMessageId})`,
           );
         }
       }
@@ -576,31 +595,50 @@ export async function POST(
                   insertData.seen_at = timestamp;
                 }
 
-                const { error: insertErr } = await supabase
+                const { data: existingMsg } = await supabase
                   .from("whatsapp_portal_messages")
-                  .insert(insertData);
-                if (!insertErr) {
+                  .select("id")
+                  .eq("wa_message_id", waMessageId)
+                  .maybeSingle();
+
+                if (existingMsg) {
                   console.log(
-                    `✅ Success: Template message inserted with real content`,
-                  );
-                } else if (insertErr.code === "23505") {
-                  console.log(
-                    `⚠️ Duplicate key for ${waMessageId} (already exists). Updating status instead.`,
+                    `⚠️ Message with wamid ${waMessageId} already exists in fallback. Updating status instead.`,
                   );
                   const { error: retryUpdateErr } = await supabase
                     .from("whatsapp_portal_messages")
                     .update(updateData)
                     .eq("wa_message_id", waMessageId);
-                  if (retryUpdateErr)
-                    console.error(
-                      "❌ Error retrying message update after duplicate key:",
-                      retryUpdateErr,
-                    );
+                  if (retryUpdateErr) {
+                    console.error("❌ Error updating message status in fallback:", retryUpdateErr);
+                  }
                 } else {
-                  console.error(
-                    "❌ Error inserting template message:",
-                    insertErr,
-                  );
+                  const { error: insertErr } = await supabase
+                    .from("whatsapp_portal_messages")
+                    .insert(insertData);
+                  if (!insertErr) {
+                    console.log(
+                      `✅ Success: Template message inserted with real content`,
+                    );
+                  } else if (insertErr.code === "23505") {
+                    console.log(
+                      `⚠️ Duplicate key for ${waMessageId} (already exists). Updating status instead.`,
+                    );
+                    const { error: retryUpdateErr } = await supabase
+                      .from("whatsapp_portal_messages")
+                      .update(updateData)
+                      .eq("wa_message_id", waMessageId);
+                    if (retryUpdateErr)
+                      console.error(
+                        "❌ Error retrying message update after duplicate key:",
+                        retryUpdateErr,
+                      );
+                  } else {
+                    console.error(
+                      "❌ Error inserting template message:",
+                      insertErr,
+                    );
+                  }
                 }
               }
             }

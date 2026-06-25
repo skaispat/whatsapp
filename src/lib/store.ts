@@ -431,7 +431,23 @@ export const useDashStore = create<DashStore>((set, get) => ({
         const toAppend: DashMessage[] = [];
 
         newestInDb.forEach((msg: DashMessage) => {
-          const existing = existingMap.get(msg.id) || (msg.wa_message_id ? existingMap.get(msg.wa_message_id) : undefined);
+          let existing = existingMap.get(msg.id) || (msg.wa_message_id ? existingMap.get(msg.wa_message_id) : undefined);
+          
+          if (!existing && msg.direction === 'outbound') {
+            // Find matching temporary message in current state to prevent double rendering
+            const tempMatch = updatedMessages.find(m => m.id.startsWith('temp-') && m.content === msg.content);
+            if (tempMatch) {
+              tempMatch.id = msg.id;
+              tempMatch.wa_message_id = msg.wa_message_id;
+              existing = tempMatch;
+              // Update map so subsequent lookups find it
+              existingMap.set(msg.id, tempMatch);
+              if (msg.wa_message_id) {
+                existingMap.set(msg.wa_message_id, tempMatch);
+              }
+            }
+          }
+
           if (existing) {
             // Update modified status (read, delivered, reactions, etc.) in place
             Object.assign(existing, {
@@ -582,6 +598,25 @@ export const useDashStore = create<DashStore>((set, get) => ({
     if (currentMessages.some(m => m.id === msg.id || (msg.wa_message_id && m.wa_message_id === msg.wa_message_id))) {
       return;
     }
+    
+    // Check if we can merge it with a temporary outbound message
+    if (msg.direction === 'outbound') {
+      const tempIndex = currentMessages.findIndex(m => m.id.startsWith('temp-') && m.content === msg.content);
+      if (tempIndex >= 0) {
+        const updated = [...currentMessages];
+        updated[tempIndex] = {
+          ...updated[tempIndex],
+          id: msg.id,
+          wa_message_id: msg.wa_message_id,
+          status: msg.status,
+          delivered_at: msg.delivered_at,
+          seen_at: msg.seen_at,
+        };
+        set({ messages: updated });
+        return;
+      }
+    }
+
     const updated = [...currentMessages, msg];
     updated.sort((a, b) => new Date(a.created_at).getTime() - new Date(b.created_at).getTime());
     set({ messages: updated });

@@ -1030,7 +1030,7 @@ export default function InboxPage() {
                                       </>
                                     )}
                                   </div>
-                                  {m.content && m.content !== '[Image]' && (
+                                  {m.content && m.content !== '[Image]' && !m.content.startsWith('Sent image:') && (
                                     <WhatsAppMessageText text={m.content} className="mt-1" />
                                   )}
                                 </div>

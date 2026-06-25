@@ -63,7 +63,7 @@ const MessageBubble = React.memo(({
         return (
           <div className="relative rounded-md overflow-hidden -mx-1 -mt-1 mb-1.5 bg-[#1b282d]">
             <img src={mediaUrl} alt="Media" className="w-full block max-h-[420px] object-cover cursor-pointer hover:opacity-95 transition-opacity" />
-            {content && content !== 'Image' && (
+            {content && content !== 'Image' && !content.startsWith('Sent image:') && (
               <p className="text-[14.2px] text-[var(--text-primary)] px-2 pt-2 pb-1 leading-relaxed">
                 {highlightText(content, highlightQuery || '')}
               </p>

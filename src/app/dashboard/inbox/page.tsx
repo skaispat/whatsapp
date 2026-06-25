@@ -91,7 +91,15 @@ function WhatsAppMessageText({
   isTemplate?: boolean;
   className?: string;
 }) {
-  const lines = text.split('\n');
+  const displayContent = text || '';
+  if (!displayContent.trim()) {
+    return (
+      <div className={`text-[13px] text-[var(--color-wa-muted)] italic leading-relaxed break-words ${className}`}>
+        [No content]
+      </div>
+    );
+  }
+  const lines = displayContent.split('\n');
 
   return (
     <div className={`text-[13px] leading-relaxed break-words ${className}`}>

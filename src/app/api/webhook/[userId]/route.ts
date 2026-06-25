@@ -442,6 +442,20 @@ export async function POST(
         if (statusUpdateError) {
           console.error("❌ Error updating message status:", statusUpdateError);
         } else if (!updatedRecord) {
+          // Check if this status ID belongs to a reaction we sent
+          if (waMessageId) {
+            const { data: reactionParentMsg } = await supabase
+              .from("whatsapp_portal_messages")
+              .select("id")
+              .contains("metadata", { sent_reaction_ids: [waMessageId] })
+              .maybeSingle();
+
+            if (reactionParentMsg) {
+              console.log(`✅ Status update for reaction ${waMessageId} received. Ignoring template fallback.`);
+              continue;
+            }
+          }
+
           console.warn(
             `⚠️ Warning: Status '${statusValue}' received, but no matching message found in DB for wa_message_id: ${waMessageId}`,
           );

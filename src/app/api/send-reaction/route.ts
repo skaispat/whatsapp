@@ -32,13 +32,59 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    await sendWhatsAppReaction({
+    const { waMessageId } = await sendWhatsAppReaction({
       to,
       messageId,
       emoji: emoji || '',
       accessToken,
       phoneNumberId,
     });
+
+    if (waMessageId) {
+      // Fetch the target message
+      const { data: targetMsg } = await supabase
+        .from('whatsapp_portal_messages')
+        .select('id, reactions, metadata')
+        .eq('wa_message_id', messageId)
+        .maybeSingle();
+
+      if (targetMsg) {
+        const currentReactions: any[] = targetMsg.reactions || [];
+        const existingMetadata = targetMsg.metadata || {};
+        const sentReactionIds = existingMetadata.sent_reaction_ids || [];
+
+        if (!sentReactionIds.includes(waMessageId)) {
+          sentReactionIds.push(waMessageId);
+        }
+
+        if (emoji) {
+          // Add or update reaction from "me"
+          const existingIdx = currentReactions.findIndex((r: any) => r.sender === 'me');
+          if (existingIdx >= 0) {
+            currentReactions[existingIdx].emoji = emoji;
+            currentReactions[existingIdx].wa_message_id = waMessageId;
+          } else {
+            currentReactions.push({ emoji, sender: 'me', wa_message_id: waMessageId });
+          }
+        } else {
+          // Remove reaction from "me"
+          const filtered = currentReactions.filter((r: any) => r.sender !== 'me');
+          currentReactions.length = 0;
+          currentReactions.push(...filtered);
+        }
+
+        await supabase
+          .from('whatsapp_portal_messages')
+          .update({
+            reactions: currentReactions,
+            metadata: {
+              ...existingMetadata,
+              sent_reaction_ids: sentReactionIds
+            }
+          })
+          .eq('id', targetMsg.id);
+      }
+    }
 
     return NextResponse.json({ success: true });
   } catch (err: any) {

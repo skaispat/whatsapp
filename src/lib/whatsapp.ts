@@ -73,10 +73,10 @@ export async function sendWhatsAppReaction({
   emoji: string;
   accessToken: string;
   phoneNumberId: string;
-}): Promise<void> {
+}): Promise<{ waMessageId: string }> {
   const url = `https://graph.facebook.com/v19.0/${phoneNumberId}/messages`;
 
-  await axios.post(
+  const response = await axios.post(
     url,
     {
       messaging_product: 'whatsapp',
@@ -95,6 +95,12 @@ export async function sendWhatsAppReaction({
       },
     }
   );
+
+  const waMessageId = response.data?.messages?.[0]?.id;
+  if (!waMessageId) {
+    throw new Error('No message ID returned from WhatsApp API');
+  }
+  return { waMessageId };
 }
 
 /**

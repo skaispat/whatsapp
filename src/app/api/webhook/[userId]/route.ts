@@ -481,6 +481,11 @@ export async function POST(
 
           // Fallback: If a message was sent externally (e.g. Template via Meta API), resolve the actual template text
           if (status.recipient_id) {
+            if (templateName === 'visitor_notification' || templateName?.includes('visitor')) {
+              console.log(`⚠️ Ignoring external visitor template for ${waMessageId}`);
+              continue;
+            }
+
             console.log(
               `♻️ Creating external template message for ${waMessageId} to ${status.recipient_id}`,
             );
@@ -537,7 +542,7 @@ export async function POST(
                 wabaId: config.waba_id,
                 accessToken: config.access_token,
               });
-              
+
               const info = resolveTemplateInfo(templates, pricingCategory, templateName);
               if (info.name !== "unknown" && info.name !== "Unknown" && info.body !== "[Template Message]") {
                 templateContent = info.body;

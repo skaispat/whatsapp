@@ -8,11 +8,11 @@ import {
 } from 'lucide-react';
 
 const NAV_ITEMS = [
-  // { key: 'overview',  label: 'Overview',        icon: LayoutDashboard },
-  // { key: 'tracker',   label: 'Message Tracker',  icon: MessageSquare },
-  { key: 'inbox',     label: 'Chat Inbox',        icon: Inbox },
-  // { key: 'health',    label: 'Phone Health',       icon: Heart },
-  // { key: 'logs',      label: 'Logs',              icon: ScrollText },
+  // { key: 'overview', label: 'Overview', icon: LayoutDashboard },
+  // { key: 'tracker', label: 'Message Tracker', icon: MessageSquare },
+  { key: 'inbox', label: 'Chat Inbox', icon: Inbox },
+  { key: 'health', label: 'Phone Health', icon: Heart },
+  { key: 'logs', label: 'Logs', icon: ScrollText },
 ];
 
 export default function Sidebar() {

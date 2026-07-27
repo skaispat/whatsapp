@@ -337,16 +337,7 @@ export const useDashStore = create<DashStore>((set, get) => ({
 
         // Resolve template content dynamically
         const resolvedData = await resolveTemplatesForMessages(data || []);
-        const visibleData = resolvedData.filter((log: any) => {
-          if (log.metadata?.hidden_for_user) return false;
-          const isTemplate = log.message_type === 'template' || Boolean(log.template_name);
-          if (log.direction === 'outbound' && isTemplate) {
-            const isTemp = typeof log.id === 'string' && log.id.startsWith('temp-');
-            const isDelivered = log.status === 'delivered' || log.status === 'read';
-            return isTemp || isDelivered;
-          }
-          return true;
-        });
+        const visibleData = resolvedData.filter((log: any) => !log.metadata?.hidden_for_user);
 
         const mapped: DashMessage[] = visibleData.map((log: any) => ({
           id: log.id,
@@ -392,16 +383,7 @@ export const useDashStore = create<DashStore>((set, get) => ({
 
         const currentMessages = get().messages;
         const resolvedData = await resolveTemplatesForMessages(data || []);
-        const visibleData = resolvedData.filter((log: any) => {
-          if (log.metadata?.hidden_for_user) return false;
-          const isTemplate = log.message_type === 'template' || Boolean(log.template_name);
-          if (log.direction === 'outbound' && isTemplate) {
-            const isTemp = typeof log.id === 'string' && log.id.startsWith('temp-');
-            const isDelivered = log.status === 'delivered' || log.status === 'read';
-            return isTemp || isDelivered;
-          }
-          return true;
-        });
+        const visibleData = resolvedData.filter((log: any) => !log.metadata?.hidden_for_user);
         const mapped = visibleData.map((log: any) => ({
           id: log.id,
           conversation_id: log.conversation_id,
@@ -530,16 +512,7 @@ export const useDashStore = create<DashStore>((set, get) => ({
 
       // Resolve template content dynamically
       const resolvedData = await resolveTemplatesForMessages(data);
-      const visibleData = resolvedData.filter((log: any) => {
-        if (log.metadata?.hidden_for_user) return false;
-        const isTemplate = log.message_type === 'template' || Boolean(log.template_name);
-        if (log.direction === 'outbound' && isTemplate) {
-          const isTemp = typeof log.id === 'string' && log.id.startsWith('temp-');
-          const isDelivered = log.status === 'delivered' || log.status === 'read';
-          return isTemp || isDelivered;
-        }
-        return true;
-      });
+      const visibleData = resolvedData.filter((log: any) => !log.metadata?.hidden_for_user);
 
       const olderMapped: DashMessage[] = visibleData.map((log: any) => ({
         id: log.id,

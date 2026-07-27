@@ -475,183 +475,172 @@ export async function POST(
             }
           }
 
-          console.warn(
-            `⚠️ Warning: Status '${statusValue}' received, but no matching message found in DB for wa_message_id: ${waMessageId}`,
+          // Allow creating chat threads ONLY if the message was tagged by our Edge Function (via biz_opaque_callback_data containing "portal" or "track")
+          const isTrackedEdgeFunction = opaque && (opaque.includes('portal') || opaque.includes('track'));
+          if (status.recipient_id && !isTrackedEdgeFunction) {
+            console.log(
+              `⚠️ Status '${statusValue}' received for untracked external message ${waMessageId}. Skipping external chat creation in dashboard.`,
+            );
+            continue;
+          }
+
+          console.log(
+            `♻️ Creating external template message for ${waMessageId} to ${status.recipient_id}`,
           );
 
-          // Fallback: If a message was sent externally (e.g. Template via Meta API), resolve the actual template text
-          if (status.recipient_id) {
-            if (templateName === 'visitor_notification' || templateName?.includes('visitor')) {
-              console.log(`⚠️ Ignoring external visitor template for ${waMessageId}`);
-              continue;
-            }
+          // Fetch the user's WhatsApp config to get WABA ID and access token
+          const { data: config } = await supabase
+            .from("whatsapp_portal_configs")
+            .select("waba_id, access_token")
+            .eq("user_id", userId)
+            .single();
 
-            // Only create fallback for external templates if the status is delivered or read
-            if (statusValue !== 'delivered' && statusValue !== 'read') {
-              console.log(
-                `⚠️ Ignoring non-delivered external template status '${statusValue}' for ${waMessageId} to ${status.recipient_id}`,
-              );
-              continue;
-            }
+          // Resolve the actual template body text by checking local cache first, then Meta API
+          let templateContent = "[Template Message]";
+          let resolvedTemplateName = templateName || "Unknown";
+          let resolvedTemplateId: string | null = null;
 
-            console.log(
-              `♻️ Creating external template message for ${waMessageId} to ${status.recipient_id}`,
-            );
+          // 1. Try local cache first
+          if (userId) {
+            const { data: cachedTemplates } = await supabase
+              .from("whatsapp_portal_templates")
+              .select("id, template_name, body, category")
+              .eq("user_id", userId);
 
-            // Fetch the user's WhatsApp config to get WABA ID and access token
-            const { data: config } = await supabase
-              .from("whatsapp_portal_configs")
-              .select("waba_id, access_token")
-              .eq("user_id", userId)
-              .single();
-
-            // Resolve the actual template body text by checking local cache first, then Meta API
-            let templateContent = "[Template Message]";
-            let resolvedTemplateName = templateName || "Unknown";
-            let resolvedTemplateId: string | null = null;
-
-            // 1. Try local cache first
-            if (userId) {
-              const { data: cachedTemplates } = await supabase
-                .from("whatsapp_portal_templates")
-                .select("id, template_name, body, category")
-                .eq("user_id", userId);
-
-              if (cachedTemplates && cachedTemplates.length > 0) {
-                const pricingCategory = status.pricing?.category; // e.g. "utility", "marketing"
-                const mappedTemplates = cachedTemplates.map((t: any) => ({
-                  id: t.id,
-                  name: t.template_name,
-                  category: t.category || '',
-                  body: t.body || ''
-                }));
-                const info = resolveTemplateInfo(mappedTemplates, pricingCategory, templateName);
-                if (info.name !== "unknown" && info.name !== "Unknown" && info.body !== "[Template Message]") {
-                  templateContent = info.body;
-                  resolvedTemplateName = info.name;
-                  const matchedCache = cachedTemplates.find(
-                    (t: any) => t.template_name.toLowerCase() === resolvedTemplateName.toLowerCase()
-                  );
-                  if (matchedCache) {
-                    resolvedTemplateId = matchedCache.id;
-                  }
-                  console.log(`📋 Resolved template from DB Cache: ${resolvedTemplateName}`);
-                }
-              }
-            }
-
-            // 2. Fallback to Meta API if still Unknown or default content
-            if ((resolvedTemplateName === "unknown" || resolvedTemplateName === "Unknown" || templateContent === "[Template Message]") && config?.waba_id && config?.access_token) {
+            if (cachedTemplates && cachedTemplates.length > 0) {
               const pricingCategory = status.pricing?.category; // e.g. "utility", "marketing"
-              console.log(
-                `📋 Fetching templates from Meta (WABA: ${config.waba_id}, category: ${pricingCategory}, hint: ${templateName})...`,
-              );
-              const templates = await fetchWhatsAppTemplates({
-                wabaId: config.waba_id,
-                accessToken: config.access_token,
-              });
-
-              const info = resolveTemplateInfo(templates, pricingCategory, templateName);
+              const mappedTemplates = cachedTemplates.map((t: any) => ({
+                id: t.id,
+                name: t.template_name,
+                category: t.category || '',
+                body: t.body || ''
+              }));
+              const info = resolveTemplateInfo(mappedTemplates, pricingCategory, templateName);
               if (info.name !== "unknown" && info.name !== "Unknown" && info.body !== "[Template Message]") {
                 templateContent = info.body;
                 resolvedTemplateName = info.name;
-                console.log(`📋 Resolved template from Meta API: ${resolvedTemplateName}`);
+                const matchedCache = cachedTemplates.find(
+                  (t: any) => t.template_name.toLowerCase() === resolvedTemplateName.toLowerCase()
+                );
+                if (matchedCache) {
+                  resolvedTemplateId = matchedCache.id;
+                }
+                console.log(`📋 Resolved template from DB Cache: ${resolvedTemplateName}`);
               }
             }
+          }
 
-            const { data: contact, error: contactError } = await supabase
-              .from("whatsapp_portal_contacts")
+          // 2. Fallback to Meta API if still Unknown or default content
+          if ((resolvedTemplateName === "unknown" || resolvedTemplateName === "Unknown" || templateContent === "[Template Message]") && config?.waba_id && config?.access_token) {
+            const pricingCategory = status.pricing?.category; // e.g. "utility", "marketing"
+            console.log(
+              `📋 Fetching templates from Meta (WABA: ${config.waba_id}, category: ${pricingCategory}, hint: ${templateName})...`,
+            );
+            const templates = await fetchWhatsAppTemplates({
+              wabaId: config.waba_id,
+              accessToken: config.access_token,
+            });
+
+            const info = resolveTemplateInfo(templates, pricingCategory, templateName);
+            if (info.name !== "unknown" && info.name !== "Unknown" && info.body !== "[Template Message]") {
+              templateContent = info.body;
+              resolvedTemplateName = info.name;
+              console.log(`📋 Resolved template from Meta API: ${resolvedTemplateName}`);
+            }
+          }
+
+          const { data: contact, error: contactError } = await supabase
+            .from("whatsapp_portal_contacts")
+            .upsert(
+              { user_id: userId, phone_number: normalizePhoneNumber(status.recipient_id) },
+              { onConflict: "user_id,phone_number" },
+            )
+            .select("id")
+            .single();
+
+          if (!contactError && contact) {
+            const { data: conversation, error: convError } = await supabase
+              .from("whatsapp_portal_conversations")
               .upsert(
-                { user_id: userId, phone_number: normalizePhoneNumber(status.recipient_id) },
-                { onConflict: "user_id,phone_number" },
+                {
+                  user_id: userId,
+                  contact_id: contact.id,
+                  last_message: templateContent,
+                  last_message_at: timestamp,
+                },
+                { onConflict: "user_id,contact_id" },
               )
               .select("id")
               .single();
 
-            if (!contactError && contact) {
-              const { data: conversation, error: convError } = await supabase
-                .from("whatsapp_portal_conversations")
-                .upsert(
-                  {
-                    user_id: userId,
-                    contact_id: contact.id,
-                    last_message: templateContent,
-                    last_message_at: timestamp,
-                  },
-                  { onConflict: "user_id,contact_id" },
-                )
-                .select("id")
-                .single();
-
-              if (!convError && conversation) {
-                const insertData: any = {
-                  user_id: userId,
-                  conversation_id: conversation.id,
-                  wa_message_id: waMessageId,
-                  direction: "outbound",
-                  content: templateContent,
-                  message_type: "template",
-                  template_id: resolvedTemplateId || null,
-                  template_name: resolvedTemplateName,
-                  status: statusValue,
-                  created_at: timestamp,
-                  pricing_category: status.pricing?.category,
-                  metadata: {
-                    error_code: errorCode,
-                    error_message: errorMessage
-                  }
-                };
-                if (statusValue === "delivered")
-                  insertData.delivered_at = timestamp;
-                if (statusValue === "read") {
-                  insertData.delivered_at = timestamp;
-                  insertData.seen_at = timestamp;
+            if (!convError && conversation) {
+              const insertData: any = {
+                user_id: userId,
+                conversation_id: conversation.id,
+                wa_message_id: waMessageId,
+                direction: "outbound",
+                content: templateContent,
+                message_type: "template",
+                template_id: resolvedTemplateId || null,
+                template_name: resolvedTemplateName,
+                status: statusValue,
+                created_at: timestamp,
+                pricing_category: status.pricing?.category,
+                metadata: {
+                  error_code: errorCode,
+                  error_message: errorMessage
                 }
+              };
+              if (statusValue === "delivered")
+                insertData.delivered_at = timestamp;
+              if (statusValue === "read") {
+                insertData.delivered_at = timestamp;
+                insertData.seen_at = timestamp;
+              }
 
-                const { data: existingMsg } = await supabase
+              const { data: existingMsg } = await supabase
+                .from("whatsapp_portal_messages")
+                .select("id")
+                .eq("wa_message_id", waMessageId)
+                .maybeSingle();
+
+              if (existingMsg) {
+                console.log(
+                  `⚠️ Message with wamid ${waMessageId} already exists in fallback. Updating status instead.`,
+                );
+                const { error: retryUpdateErr } = await supabase
                   .from("whatsapp_portal_messages")
-                  .select("id")
-                  .eq("wa_message_id", waMessageId)
-                  .maybeSingle();
-
-                if (existingMsg) {
+                  .update(updateData)
+                  .eq("wa_message_id", waMessageId);
+                if (retryUpdateErr) {
+                  console.error("❌ Error updating message status in fallback:", retryUpdateErr);
+                }
+              } else {
+                const { error: insertErr } = await supabase
+                  .from("whatsapp_portal_messages")
+                  .insert(insertData);
+                if (!insertErr) {
                   console.log(
-                    `⚠️ Message with wamid ${waMessageId} already exists in fallback. Updating status instead.`,
+                    `✅ Success: Template message inserted with real content`,
+                  );
+                } else if (insertErr.code === "23505") {
+                  console.log(
+                    `⚠️ Duplicate key for ${waMessageId} (already exists). Updating status instead.`,
                   );
                   const { error: retryUpdateErr } = await supabase
                     .from("whatsapp_portal_messages")
                     .update(updateData)
                     .eq("wa_message_id", waMessageId);
-                  if (retryUpdateErr) {
-                    console.error("❌ Error updating message status in fallback:", retryUpdateErr);
-                  }
-                } else {
-                  const { error: insertErr } = await supabase
-                    .from("whatsapp_portal_messages")
-                    .insert(insertData);
-                  if (!insertErr) {
-                    console.log(
-                      `✅ Success: Template message inserted with real content`,
-                    );
-                  } else if (insertErr.code === "23505") {
-                    console.log(
-                      `⚠️ Duplicate key for ${waMessageId} (already exists). Updating status instead.`,
-                    );
-                    const { error: retryUpdateErr } = await supabase
-                      .from("whatsapp_portal_messages")
-                      .update(updateData)
-                      .eq("wa_message_id", waMessageId);
-                    if (retryUpdateErr)
-                      console.error(
-                        "❌ Error retrying message update after duplicate key:",
-                        retryUpdateErr,
-                      );
-                  } else {
+                  if (retryUpdateErr)
                     console.error(
-                      "❌ Error inserting template message:",
-                      insertErr,
+                      "❌ Error retrying message update after duplicate key:",
+                      retryUpdateErr,
                     );
-                  }
+                } else {
+                  console.error(
+                    "❌ Error inserting template message:",
+                    insertErr,
+                  );
                 }
               }
             }
@@ -664,20 +653,20 @@ export async function POST(
       }
     }
   } catch (err) {
-    console.error("Webhook processing error:", err);
-  }
+  console.error("Webhook processing error:", err);
+}
 
-  if (payloadId) {
-    try {
-      await supabase
-        .from("webhook_payloads")
-        .update({ processed: true })
-        .eq("id", payloadId)
-        .maybeSingle();
-    } catch (dbErr) {
-      console.warn("⚠️ Warning: Failed to set payload processed: true", dbErr);
-    }
+if (payloadId) {
+  try {
+    await supabase
+      .from("webhook_payloads")
+      .update({ processed: true })
+      .eq("id", payloadId)
+      .maybeSingle();
+  } catch (dbErr) {
+    console.warn("⚠️ Warning: Failed to set payload processed: true", dbErr);
   }
+}
 
-  return NextResponse.json({ status: "ok" });
+return NextResponse.json({ status: "ok" });
 }

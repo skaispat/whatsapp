@@ -254,7 +254,7 @@ export default function SettingsPage() {
                 {testing ? <Loader2 size={18} className="animate-spin" /> : <Shield size={18} />}
                 Test Connection
               </button>
-              
+
               <button
                 type="submit"
                 disabled={loading}
@@ -263,7 +263,7 @@ export default function SettingsPage() {
                 {loading ? <><Loader2 size={18} className="animate-spin" /> Saving...</> : 'Save Changes'}
               </button>
             </div>
-            
+
             {testResult && (
               <div className={`text-sm flex items-center gap-1.5 mt-2 ${testResult.valid ? 'text-[#00a884]' : 'text-[#ff5c5c]'}`}>
                 {testResult.valid ? <CheckCircle2 size={16} /> : <AlertCircle size={16} />}

@@ -486,6 +486,14 @@ export async function POST(
               continue;
             }
 
+            // Only create fallback for external templates if the status is delivered or read
+            if (statusValue !== 'delivered' && statusValue !== 'read') {
+              console.log(
+                `⚠️ Ignoring non-delivered external template status '${statusValue}' for ${waMessageId} to ${status.recipient_id}`,
+              );
+              continue;
+            }
+
             console.log(
               `♻️ Creating external template message for ${waMessageId} to ${status.recipient_id}`,
             );

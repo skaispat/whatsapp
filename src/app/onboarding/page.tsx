@@ -139,7 +139,7 @@ export default function OnboardingPage() {
     <div className="min-h-screen bg-[var(--color-wa-bg)] flex flex-col items-center py-10 px-4 animate-fadeIn">
       {/* Header */}
       <div className="flex flex-col items-center mb-10 relative w-full max-w-2xl">
-        <Link 
+        <Link
           href="/dashboard"
           className="absolute left-0 top-1 text-[var(--color-wa-muted)] hover:text-[var(--color-wa-text)] flex items-center gap-1.5 text-[13px] font-medium transition-colors"
         >
@@ -279,11 +279,11 @@ export default function OnboardingPage() {
               </h3>
               <div className="badge badge-green">Required</div>
             </div>
-            
+
             <p className="text-[var(--color-wa-muted)] text-[13px] mb-4 font-medium leading-relaxed">
               Copy this callback URL into Meta Dashboard → WhatsApp → Configuration → Webhook URL:
             </p>
-            
+
             <div className="flex items-center gap-2 bg-[var(--color-wa-bg)] p-3 rounded-xl border border-[var(--color-wa-border)]">
               <code className="flex-1 text-[var(--color-wa-teal)] text-[12px] font-mono truncate font-bold">
                 {webhookUrl}
@@ -321,7 +321,7 @@ export default function OnboardingPage() {
           </div>
         </div>
       </div>
-      
+
       <footer className="mt-12 text-center text-[12px] text-[var(--color-wa-muted)] font-medium">
         Powered by <span className="text-[#25D366] font-bold">Botivate</span> WhatsApp System
       </footer>

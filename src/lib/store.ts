@@ -26,7 +26,7 @@ async function resolveTemplatesForMessages(rawMessages: any[]): Promise<any[]> {
     if (userId) {
       query = query.eq('user_id', userId);
     }
-    
+
     let { data: templates, error } = await query;
 
     if (error) {
@@ -39,7 +39,7 @@ async function resolveTemplatesForMessages(rawMessages: any[]): Promise<any[]> {
     if (templates) {
       templates.forEach((t: any) => {
         const normalizedKey = t.template_name.toLowerCase().replace(/_/g, '').trim();
-        
+
         let extractedButtons = t.buttons || [];
         if ((!extractedButtons || extractedButtons.length === 0) && t.components && Array.isArray(t.components)) {
           const btnComponent = t.components.find((c: any) => c.type === 'BUTTONS');
@@ -64,7 +64,7 @@ async function resolveTemplatesForMessages(rawMessages: any[]): Promise<any[]> {
         const template = templateMap[normalizedKey];
         const parameters = msg.metadata?.parameters || [];
         const buttons = msg.metadata?.buttons || [];
-        
+
         if (buttons.length > 0) {
           msg.buttons = buttons;
         }
@@ -96,7 +96,7 @@ async function resolveTemplatesForMessages(rawMessages: any[]): Promise<any[]> {
           }
 
           msg.content = fullContent;
-          
+
           // Attach buttons if they exist and aren't already on the message
           if (template.buttons && template.buttons.length > 0 && (!msg.buttons || msg.buttons.length === 0)) {
             msg.buttons = template.buttons;
@@ -283,11 +283,11 @@ export const useDashStore = create<DashStore>((set, get) => ({
         .order('last_message_at', { ascending: false });
 
       if (error) throw error;
-      
+
       const activeId = get().activeConversationId;
       const convs = (data || []).map((row: any) => {
         const isCurrentActive = row.id === activeId;
-        
+
         if (isCurrentActive && row.unread_count > 0) {
           supabase
             .from('whatsapp_portal_conversations')
@@ -335,11 +335,20 @@ export const useDashStore = create<DashStore>((set, get) => ({
 
         if (error) throw error;
 
-      // Resolve template content dynamically
-      const resolvedData = await resolveTemplatesForMessages(data || []);
-      const visibleData = resolvedData.filter((log: any) => !log.metadata?.hidden_for_user);
-      
-      const mapped: DashMessage[] = visibleData.map((log: any) => ({
+        // Resolve template content dynamically
+        const resolvedData = await resolveTemplatesForMessages(data || []);
+        const visibleData = resolvedData.filter((log: any) => {
+          if (log.metadata?.hidden_for_user) return false;
+          const isTemplate = log.message_type === 'template' || Boolean(log.template_name);
+          if (log.direction === 'outbound' && isTemplate) {
+            const isTemp = typeof log.id === 'string' && log.id.startsWith('temp-');
+            const isDelivered = log.status === 'delivered' || log.status === 'read';
+            return isTemp || isDelivered;
+          }
+          return true;
+        });
+
+        const mapped: DashMessage[] = visibleData.map((log: any) => ({
           id: log.id,
           conversation_id: log.conversation_id,
           direction: log.direction,
@@ -366,7 +375,7 @@ export const useDashStore = create<DashStore>((set, get) => ({
         }));
 
         const reversed = mapped.reverse();
-        set({ 
+        set({
           messages: reversed,
           hasMoreMessages: mapped.length === 30
         });
@@ -382,7 +391,17 @@ export const useDashStore = create<DashStore>((set, get) => ({
         if (error) throw error;
 
         const currentMessages = get().messages;
-        const visibleData = (data || []).filter((log: any) => !log.metadata?.hidden_for_user);
+        const resolvedData = await resolveTemplatesForMessages(data || []);
+        const visibleData = resolvedData.filter((log: any) => {
+          if (log.metadata?.hidden_for_user) return false;
+          const isTemplate = log.message_type === 'template' || Boolean(log.template_name);
+          if (log.direction === 'outbound' && isTemplate) {
+            const isTemp = typeof log.id === 'string' && log.id.startsWith('temp-');
+            const isDelivered = log.status === 'delivered' || log.status === 'read';
+            return isTemp || isDelivered;
+          }
+          return true;
+        });
         const mapped = visibleData.map((log: any) => ({
           id: log.id,
           conversation_id: log.conversation_id,
@@ -432,7 +451,7 @@ export const useDashStore = create<DashStore>((set, get) => ({
 
         newestInDb.forEach((msg: DashMessage) => {
           let existing = existingMap.get(msg.id) || (msg.wa_message_id ? existingMap.get(msg.wa_message_id) : undefined);
-          
+
           if (!existing && msg.direction === 'outbound') {
             // Find matching temporary message in current state to prevent double rendering
             const tempMatch = updatedMessages.find(m => m.id.startsWith('temp-') && m.content === msg.content);
@@ -488,7 +507,7 @@ export const useDashStore = create<DashStore>((set, get) => ({
   fetchOlderMessages: async (conversationId: string) => {
     const currentMessages = get().messages;
     if (currentMessages.length === 0) return;
-    
+
     // Earliest message timestamp in state is the first message's created_at
     const earliestMessageTimestamp = currentMessages[0].created_at;
     set({ loadingOlderMessages: true });
@@ -511,7 +530,16 @@ export const useDashStore = create<DashStore>((set, get) => ({
 
       // Resolve template content dynamically
       const resolvedData = await resolveTemplatesForMessages(data);
-      const visibleData = resolvedData.filter((log: any) => !log.metadata?.hidden_for_user);
+      const visibleData = resolvedData.filter((log: any) => {
+        if (log.metadata?.hidden_for_user) return false;
+        const isTemplate = log.message_type === 'template' || Boolean(log.template_name);
+        if (log.direction === 'outbound' && isTemplate) {
+          const isTemp = typeof log.id === 'string' && log.id.startsWith('temp-');
+          const isDelivered = log.status === 'delivered' || log.status === 'read';
+          return isTemp || isDelivered;
+        }
+        return true;
+      });
 
       const olderMapped: DashMessage[] = visibleData.map((log: any) => ({
         id: log.id,
@@ -598,7 +626,7 @@ export const useDashStore = create<DashStore>((set, get) => ({
     if (currentMessages.some(m => m.id === msg.id || (msg.wa_message_id && m.wa_message_id === msg.wa_message_id))) {
       return;
     }
-    
+
     // Check if we can merge it with a temporary outbound message
     if (msg.direction === 'outbound') {
       const tempIndex = currentMessages.findIndex(m => m.id.startsWith('temp-') && m.content === msg.content);
@@ -762,8 +790,8 @@ export const useDashStore = create<DashStore>((set, get) => ({
         }));
       } else {
         set(state => ({
-          messages: state.messages.map(m => 
-            m.id === messageId 
+          messages: state.messages.map(m =>
+            m.id === messageId
               ? { ...m, content: '🚫 This message was deleted', message_type: 'revoked', metadata: { ...m.metadata, revoked: true } }
               : m
           )
@@ -824,7 +852,7 @@ export const useDashStore = create<DashStore>((set, get) => ({
         }));
       } else {
         set(state => ({
-          messages: state.messages.map(m => 
+          messages: state.messages.map(m =>
             messageIds.includes(m.id)
               ? { ...m, content: '🚫 This message was deleted', message_type: 'revoked', metadata: { ...m.metadata, revoked: true } }
               : m

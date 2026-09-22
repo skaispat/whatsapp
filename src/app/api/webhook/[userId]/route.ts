@@ -653,20 +653,20 @@ export async function POST(
       }
     }
   } catch (err) {
-  console.error("Webhook processing error:", err);
-}
-
-if (payloadId) {
-  try {
-    await supabase
-      .from("webhook_payloads")
-      .update({ processed: true })
-      .eq("id", payloadId)
-      .maybeSingle();
-  } catch (dbErr) {
-    console.warn("⚠️ Warning: Failed to set payload processed: true", dbErr);
+    console.error("Webhook processing error:", err);
   }
-}
 
-return NextResponse.json({ status: "ok" });
+  if (payloadId) {
+    try {
+      await supabase
+        .from("webhook_payloads")
+        .update({ processed: true })
+        .eq("id", payloadId)
+        .maybeSingle();
+    } catch (dbErr) {
+      console.warn("⚠️ Warning: Failed to set payload processed: true", dbErr);
+    }
+  }
+
+  return NextResponse.json({ status: "ok" });
 }

@@ -27,7 +27,6 @@ export default function Sidebar() {
 
   return (
     <>
-      {/* Overlay for mobile */}
       {sidebarOpen && (
         <div
           className="fixed inset-0 z-30 bg-black/60 md:hidden"
@@ -35,7 +34,7 @@ export default function Sidebar() {
         />
       )}
 
-      {/* Sidebar */}
+
       <aside className={`
         fixed top-0 left-0 h-full z-40 flex flex-col
         transition-transform duration-300 ease-in-out
